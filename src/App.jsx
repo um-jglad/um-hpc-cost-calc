@@ -307,7 +307,7 @@ function App() {
   // Reset partition to 'standard' when cluster changes
   useEffect(() => {
     setPartition('standard');
-  setGpuType('');
+    setGpuType('');
   }, [cluster]);
 
   // Update job configuration when job type changes
