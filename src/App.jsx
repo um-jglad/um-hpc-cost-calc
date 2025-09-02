@@ -1,114 +1,148 @@
 import React, { useState, useEffect, useRef } from 'react';
 // GitHub icon link fixed in the top-right is rendered inline
 
-// Great Lakes HPC partition configurations with TRES billing weights
-const PARTITION_RATES = {
-  'standard': {
-    name: 'Standard',
-    defaultCores: 1,
-    defaultMemoryPerCore: 7, // GB
-    maxCores: 36,
-    maxMemory: 180, // GB
-    hasGPU: false,
-    description: 'General purpose compute partition',
-    billing: {
-      cpu_weight: 2505,
-      mem_weight: 358,
-      gpu_weight: 0
+// Cluster partition configurations with TRES billing weights
+// NOTE: Great Lakes weights were sourced from GL on 2025-07-01.
+//       Armis2 weights are derived to match published per-minute rates using typical defaults.
+const CLUSTER_CONFIG = {
+  greatlakes: {
+    label: 'Great Lakes',
+    partitions: {
+      standard: {
+        name: 'Standard',
+        defaultCores: 1,
+        defaultMemoryPerCore: 7, // GB
+        maxCores: 36,
+        maxMemory: 180, // GB
+        hasGPU: false,
+        description: 'General purpose compute partition',
+        billing: { cpu_weight: 2505, mem_weight: 358, gpu_weight: 0 }
+      },
+      debug: {
+        name: 'Debug',
+        defaultCores: 1,
+        defaultMemoryPerCore: 7, // GB
+        maxCores: 8,
+        maxMemory: 40, // GB
+        hasGPU: false,
+        description: 'Debug partition for testing jobs (max 4 hours)',
+        billing: { cpu_weight: 2505, mem_weight: 358, gpu_weight: 0 }
+      },
+      viz: {
+        name: 'Visualization',
+        defaultCores: 1,
+        defaultMemoryPerCore: 7, // GB
+        maxCores: 40,
+        maxMemory: 180, // GB
+        hasGPU: false,
+        description: 'Visualization partition (max 2 hours)',
+        billing: { cpu_weight: 2505, mem_weight: 358, gpu_weight: 0 }
+      },
+      largemem: {
+        name: 'Large Memory',
+        defaultCores: 1,
+        defaultMemoryPerCore: 42, // GB (rounded from 41.75)
+        maxCores: 36,
+        maxMemory: 1503, // GB
+        hasGPU: false,
+        description: 'High memory nodes for memory-intensive jobs',
+        billing: { cpu_weight: 7704, mem_weight: 185, gpu_weight: 0 }
+      },
+      gpu: {
+        name: 'GPU',
+        defaultCores: 20,
+        defaultMemoryPerCore: 5, // GB (rounded from 4.5, 90GB / 20 cores)
+        maxCores: 40,
+        maxMemory: 180, // GB
+        hasGPU: true,
+        description: 'GPU-accelerated computing with V100 GPUs',
+        billing: { cpu_weight: 1370, mem_weight: 304, gpu_weight: 27391 }
+      },
+      gpu_mig40: {
+        name: 'MIG40 GPU',
+        defaultCores: 8,
+        defaultMemoryPerCore: 16, // GB (rounded from 15.625, 125GB / 8 cores)
+        maxCores: 64,
+        maxMemory: 1000, // GB
+        hasGPU: true,
+        description: 'GPU partition with 1/2 A100 GPU (40GB each)',
+        billing: { cpu_weight: 3424, mem_weight: 221, gpu_weight: 27391 }
+      },
+      spgpu: {
+        name: 'SPGPU',
+        defaultCores: 4,
+        defaultMemoryPerCore: 12, // GB (48GB / 4 cores)
+        maxCores: 32,
+        maxMemory: 372, // GB
+        hasGPU: true,
+        description: 'SPGPU partition with A40 GPUs',
+        billing: { cpu_weight: 4520, mem_weight: 377, gpu_weight: 18079 }
+      }
     }
   },
-  'debug': {
-    name: 'Debug',
-    defaultCores: 1,
-    defaultMemoryPerCore: 7, // GB
-    maxCores: 8,
-    maxMemory: 40, // GB
-    hasGPU: false,
-    description: 'Debug partition for testing jobs',
-    billing: {
-      cpu_weight: 2505,
-      mem_weight: 358,
-      gpu_weight: 0
-    }
-  },
-  'viz': {
-    name: 'Visualization',
-    defaultCores: 1,
-    defaultMemoryPerCore: 7, // GB
-    maxCores: 40,
-    maxMemory: 180, // GB
-    hasGPU: false,
-    description: 'Visualization partition',
-    billing: {
-      cpu_weight: 2505,
-      mem_weight: 358,
-      gpu_weight: 0
-    }
-  },
-  'largemem': {
-    name: 'Large Memory',
-    defaultCores: 1,
-    defaultMemoryPerCore: 42, // GB (rounded from 41.75)
-    maxCores: 36,
-    maxMemory: 1503, // GB
-    hasGPU: false,
-    description: 'High memory nodes for memory-intensive jobs',
-    billing: {
-      cpu_weight: 7704,
-      mem_weight: 185,
-      gpu_weight: 0
-    }
-  },
-  'gpu': {
-    name: 'GPU',
-    defaultCores: 20,
-    defaultMemoryPerCore: 5, // GB (rounded from 4.5, 90GB / 20 cores)
-    maxCores: 40,
-    maxMemory: 180, // GB
-    hasGPU: true,
-    description: 'GPU-accelerated computing with V100 GPUs',
-    billing: {
-      cpu_weight: 1370,
-      mem_weight: 304,
-      gpu_weight: 27391
-    }
-  },
-  'gpu_mig40': {
-    name: 'MIG40 GPU',
-    defaultCores: 8,
-    defaultMemoryPerCore: 16, // GB (rounded from 15.625, 125GB / 8 cores)
-    maxCores: 64,
-    maxMemory: 1000, // GB
-    hasGPU: true,
-    description: 'GPU partition with 1/2 A100 GPU (40GB each)',
-    billing: {
-      cpu_weight: 3424,
-      mem_weight: 221,
-      gpu_weight: 27391
-    }
-  },
-  'spgpu': {
-    name: 'SPGPU',
-    defaultCores: 4,
-    defaultMemoryPerCore: 12, // GB (48GB / 4 cores)
-    maxCores: 32,
-    maxMemory: 372, // GB
-    hasGPU: true,
-    description: 'SPGPU partition with A40 GPUs',
-    billing: {
-      cpu_weight: 4520,
-      mem_weight: 377,
-      gpu_weight: 18079
+  armis2: {
+    label: 'Armis2',
+    partitions: {
+      standard: {
+        name: 'Standard',
+        defaultCores: 1,
+        defaultMemoryPerCore: 7, // baseline used in published rate table
+        maxCores: 24, // per-node cores
+        maxMemory: 123, // GB (rounded from 122.8 requestable)
+        hasGPU: false,
+        description: 'General purpose compute partition on Armis2',
+        // Derived to match ~$0.000290046/min for 1 core & 7 GB
+        billing: { cpu_weight: 2900, mem_weight: 414, gpu_weight: 0 }
+      },
+      debug: {
+        name: 'Debug',
+        defaultCores: 1,
+        defaultMemoryPerCore: 7,
+        maxCores: 8,
+        maxMemory: 40,
+        hasGPU: false,
+        description: 'Debug partition for testing jobs',
+        billing: { cpu_weight: 2900, mem_weight: 414, gpu_weight: 0 }
+      },
+      largemem: {
+        name: 'Large Memory',
+        defaultCores: 1,
+        defaultMemoryPerCore: 27, // GB (rounded from 26.89)
+        maxCores: 36,
+        maxMemory: 1542, // GB requestable
+        hasGPU: false,
+        description: 'High memory nodes (1.5 TB) on Armis2',
+        // Derived to match ~$0.000803704/min for 1 core & 26.89 GB
+        billing: { cpu_weight: 8037, mem_weight: 299, gpu_weight: 0 }
+      },
+      gpu: {
+        name: 'GPU',
+        defaultCores: 5,
+        defaultMemoryPerCore: 3, // 5 cores -> 15 GB baseline
+        maxCores: 40, // up to V100 node
+        maxMemory: 184, // GB (rounded from 184.3 requestable on V100)
+        hasGPU: true,
+        description: 'GPU partition (TitanV and V100 nodes)',
+        // Derived to match ~$0.002815741/min for 1 GPU, 5 cores, 15 GB
+        billing: { cpu_weight: 2900, mem_weight: 414, gpu_weight: 28157 },
+        gpuTypes: {
+          v100: { label: 'V100', maxCores: 40, maxMemory: 184 },
+          titanv: { label: 'Titan V', maxCores: 16, maxMemory: 123 }
+        },
+        defaultGpuType: 'v100'
+      }
     }
   }
 };
 
 function App() {
+  const [cluster, setCluster] = useState('greatlakes');
   const [jobType, setJobType] = useState('standard');
   const [partition, setPartition] = useState('standard');
   const [cores, setCores] = useState(1);
   const [memory, setMemory] = useState(7);
   const [gpus, setGpus] = useState(0);
+  const [gpuType, setGpuType] = useState('');
   const [days, setDays] = useState(0);
   const [hours, setHours] = useState(1);
   const [minutes, setMinutes] = useState(0);
@@ -178,11 +212,27 @@ function App() {
     return numValue < min || numValue > max;
   };
 
+  // Helper to get current cluster and partition data
+  const currentCluster = CLUSTER_CONFIG[cluster];
+  const PARTITION_RATES = currentCluster.partitions;
+
   // Helper function to get the maximum cores for the current partition
-  const getMaxCores = () => PARTITION_RATES[partition].maxCores;
+  const getMaxCores = () => {
+    const p = PARTITION_RATES[partition];
+    if (cluster === 'armis2' && partition === 'gpu' && p.gpuTypes && gpuType && p.gpuTypes[gpuType]) {
+      return p.gpuTypes[gpuType].maxCores;
+    }
+    return p.maxCores;
+  };
 
   // Helper function to get the maximum memory for the current partition
-  const getMaxMemory = () => PARTITION_RATES[partition].maxMemory;
+  const getMaxMemory = () => {
+    const p = PARTITION_RATES[partition];
+    if (cluster === 'armis2' && partition === 'gpu' && p.gpuTypes && gpuType && p.gpuTypes[gpuType]) {
+      return p.gpuTypes[gpuType].maxMemory;
+    }
+    return p.maxMemory;
+  };
 
   // Helper function to handle input changes that allow empty values and out-of-range values
   const handleInputChange = (setter, minValue = 0, maxValue = Infinity) => (e) => {
@@ -247,7 +297,18 @@ function App() {
     setCores(defaultCores);
     setMemory(Math.round(defaultCores * partitionData.defaultMemoryPerCore));
     setGpus(partitionData.hasGPU ? 1 : 0);
-  }, [partition, jobType]);
+    if (cluster === 'armis2' && partition === 'gpu' && partitionData.defaultGpuType) {
+      setGpuType(partitionData.defaultGpuType);
+    } else {
+      setGpuType('');
+    }
+  }, [partition, jobType, cluster]);
+
+  // Reset partition to 'standard' when cluster changes
+  useEffect(() => {
+    setPartition('standard');
+  setGpuType('');
+  }, [cluster]);
 
   // Update job configuration when job type changes
   useEffect(() => {
@@ -291,7 +352,7 @@ function App() {
 
   // Calculate cost using TRES billing weights
   const calculateCost = () => {
-    const partitionData = PARTITION_RATES[partition];
+  const partitionData = PARTITION_RATES[partition];
     
     // Calculate billing using TRES formula with clamped values:
     // billing = int(max(cpu_weight * cpus, mem_weight * mem_gb, gpu_weight * gpus))
@@ -376,7 +437,11 @@ function App() {
     script += `#SBATCH --time=${formatTimeForSlurm()}\n`;
     
     if (currentPartition.hasGPU && clampedGpus > 0) {
-      script += `#SBATCH --gres=gpu:${clampedGpus}\n`;
+      if (cluster === 'armis2' && partition === 'gpu' && gpuType) {
+        script += `#SBATCH --gres=gpu:${gpuType}:${clampedGpus}\n`;
+      } else {
+        script += `#SBATCH --gres=gpu:${clampedGpus}\n`;
+      }
     }
     
     if (jobType === 'array') {
@@ -531,14 +596,30 @@ function App() {
       </div>
       <div className="app">
         <div className="header">
-          <h1>Great Lakes HPC Cost Calculator</h1>
-          <p>Calculate the cost of your HPC jobs on the University of Michigan Great Lakes cluster</p>
+          <h1>UM HPC Cost Calculator</h1>
+          <p>Estimate costs for Great Lakes and Armis2 clusters</p>
         </div>
 
         <div className="calculator">
           <div className="form-section">
             <h3>Job Configuration</h3>
             
+            <div className="form-group">
+              <label htmlFor="cluster">Cluster</label>
+              <select 
+                id="cluster"
+                value={cluster}
+                onChange={(e) => setCluster(e.target.value)}
+              >
+                {Object.entries(CLUSTER_CONFIG).map(([key, cfg]) => (
+                  <option key={key} value={key}>{cfg.label}</option>
+                ))}
+              </select>
+              <div className="partition-info">
+                <p>{cluster === 'greatlakes' ? 'Great Lakes HPC' : 'Armis2 (HIPAA/Export-controlled)'}</p>
+              </div>
+            </div>
+
             <div className="form-group">
               <label htmlFor="jobType">Job Type</label>
               <select 
@@ -574,6 +655,24 @@ function App() {
                 <p>{currentPartition.description}</p>
               </div>
             </div>
+
+            {currentPartition.hasGPU && cluster === 'armis2' && partition === 'gpu' && currentPartition.gpuTypes && (
+              <div className="form-group">
+                <label htmlFor="gpuType">GPU Type</label>
+                <select 
+                  id="gpuType"
+                  value={gpuType}
+                  onChange={(e) => setGpuType(e.target.value)}
+                >
+                  {Object.entries(currentPartition.gpuTypes).map(([key, t]) => (
+                    <option key={key} value={key}>{t.label}</option>
+                  ))}
+                </select>
+                <div className="partition-info">
+                  <p>Limits adjust based on GPU type.</p>
+                </div>
+              </div>
+            )}
 
             <div className="form-row">
               <div className="form-group">
@@ -747,6 +846,10 @@ function App() {
               <div className="breakdown-item">
                 <span>Job Type:</span>
                 <span>{jobType === 'standard' ? 'Single Core' : jobType === 'multicore' ? 'Multicore' : 'Array'}</span>
+              </div>
+              <div className="breakdown-item">
+                <span>Cluster:</span>
+                <span>{currentCluster.label}</span>
               </div>
               <div className="breakdown-item">
                 <span>Partition:</span>
