@@ -1,4 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
+import {
+  EXAMPLE_SBATCH_HEADER,
+  parseArrayTaskCount,
+  parseGres,
+  parseGpuCountSpec,
+  parseMemoryDirectiveToGb,
+  parseNodesMinCount,
+  parsePositiveInteger,
+  parseSbatchHeader,
+  parseTimeDirectiveToSeconds,
+  resolvePartition
+} from './sbatchParser';
 // GitHub icon link fixed in the top-right is rendered inline
 
 // Cluster partition configurations with TRES billing weights
@@ -150,8 +162,12 @@ function App() {
   const [isArrayJob, setIsArrayJob] = useState(false);
   const [arrayJobCount, setArrayJobCount] = useState(1);
   const [showSbatch, setShowSbatch] = useState(false);
+  const [showSbatchImport, setShowSbatchImport] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
+  const [sbatchHeaderInput, setSbatchHeaderInput] = useState('');
+  const [sbatchImportFeedback, setSbatchImportFeedback] = useState(null);
+  const isApplyingSbatchImportRef = useRef(false);
   const sbatchRef = useRef(null);
 
   // Initialize theme from localStorage
@@ -200,6 +216,327 @@ function App() {
     } catch (err) {
       console.error('Failed to copy text: ', err);
     }
+  };
+
+  const handleLoadSbatchExample = () => {
+    setSbatchHeaderInput(EXAMPLE_SBATCH_HEADER);
+    setSbatchImportFeedback(null);
+  };
+
+  const handleClusterChange = (e) => {
+    const nextCluster = e.target.value;
+    setCluster(nextCluster);
+    setPartition('standard');
+    setGpuType('');
+  };
+
+  const applyParsedSbatchHeader = () => {
+    const parsed = parseSbatchHeader(sbatchHeaderInput);
+    const errors = [];
+    const warnings = [];
+    const applied = [];
+
+    if (!parsed.sbatchLineCount) {
+      setSbatchImportFeedback({
+        status: 'error',
+        errors: ['No SBATCH directives found. Paste header lines that begin with #SBATCH.'],
+        warnings: [],
+        applied: [],
+        ignoredDirectives: parsed.ignoredDirectives,
+        nonSbatchLineCount: parsed.nonSbatchLineCount
+      });
+      return;
+    }
+
+    const directives = parsed.directives;
+    const partitionDirective = directives.partition;
+    const timeDirective = directives.time;
+
+    const nodesDirective = directives.nodes;
+    const ntasksDirective = directives.ntasks;
+    const ntasksPerNodeDirective = directives['ntasks-per-node'];
+    const ntasksPerGpuDirective = directives['ntasks-per-gpu'];
+
+    const cpusPerTaskDirective = directives['cpus-per-task'];
+    const cpusPerGpuDirective = directives['cpus-per-gpu'];
+
+    const gpusDirective = directives.gpus;
+    const gpusPerNodeDirective = directives['gpus-per-node'];
+    const gpusPerTaskDirective = directives['gpus-per-task'];
+
+    const memDirective = directives.mem;
+    const memPerCpuDirective = directives['mem-per-cpu'];
+    const memPerGpuDirective = directives['mem-per-gpu'];
+
+    if (!timeDirective) {
+      errors.push('Missing required directive: --time');
+    }
+
+    if (!cpusPerTaskDirective && !ntasksDirective && !cpusPerGpuDirective && !ntasksPerNodeDirective && !ntasksPerGpuDirective) {
+      errors.push('Missing required CPU/task directives: provide one of --ntasks, --ntasks-per-node, --ntasks-per-gpu, --cpus-per-task, or --cpus-per-gpu.');
+    }
+
+    if (!memDirective && !memPerCpuDirective && !memPerGpuDirective) {
+      errors.push('Missing required memory directive: provide --mem, --mem-per-cpu, or --mem-per-gpu.');
+    }
+
+    const resolvedPartition = partitionDirective
+      ? resolvePartition(partitionDirective, CLUSTER_CONFIG, cluster, PARTITION_RATES)
+      : { clusterKey: cluster, partitionKey: 'standard' };
+    if (partitionDirective && !resolvedPartition) {
+      errors.push(`Unable to map partition "${partitionDirective}" to a supported partition in this app.`);
+    }
+
+    const parsedSeconds = timeDirective ? parseTimeDirectiveToSeconds(timeDirective) : null;
+    if (timeDirective && parsedSeconds === null) {
+      errors.push('Unable to parse --time. Supported formats: minutes, MM:SS, HH:MM:SS, D-HH:MM:SS.');
+    }
+
+    const nodesInfo = nodesDirective ? parseNodesMinCount(nodesDirective) : null;
+    if (nodesDirective && !nodesInfo) {
+      errors.push('Invalid --nodes value. Supported examples: 1, 2-4, 1-8:2, or comma lists.');
+    }
+    if (nodesInfo?.isApproximate) {
+      warnings.push('Using minimum node count from --nodes range/list for estimation.');
+    }
+    const nodeCount = nodesInfo?.count || null;
+
+    const arrayDirective = directives.array;
+    const parsedArrayCount = arrayDirective ? parseArrayTaskCount(arrayDirective) : null;
+    if (arrayDirective && parsedArrayCount === null) {
+      errors.push('Unable to parse --array value. Use forms like 1-100, 0-31, 1,3,5, or 1-100:2.');
+    }
+
+    const parsedGpus = gpusDirective ? parseGpuCountSpec(gpusDirective) : null;
+    if (gpusDirective && parsedGpus === null) {
+      errors.push('Invalid --gpus value. Use [type:]count (for example, 2 or a100:2).');
+    }
+
+    const parsedGpusPerNode = gpusPerNodeDirective ? parseGpuCountSpec(gpusPerNodeDirective) : null;
+    if (gpusPerNodeDirective && parsedGpusPerNode === null) {
+      errors.push('Invalid --gpus-per-node value. Use [type:]count.');
+    }
+
+    const parsedGpusPerTask = gpusPerTaskDirective ? parseGpuCountSpec(gpusPerTaskDirective) : null;
+    if (gpusPerTaskDirective && parsedGpusPerTask === null) {
+      errors.push('Invalid --gpus-per-task value. Use [type:]count.');
+    }
+
+    const gresParseResult = parseGres(directives.gres);
+    if (directives.gres && gresParseResult.gpus === null && !parsedGpus) {
+      warnings.push('Found --gres but could not parse GPU count from it.');
+    }
+
+    const ntasks = ntasksDirective ? parsePositiveInteger(ntasksDirective) : null;
+    const ntasksPerNode = ntasksPerNodeDirective ? parsePositiveInteger(ntasksPerNodeDirective) : null;
+    const ntasksPerGpu = ntasksPerGpuDirective ? parsePositiveInteger(ntasksPerGpuDirective) : null;
+    if (ntasksDirective && ntasks === null) {
+      errors.push('Invalid --ntasks value. It must be a positive integer.');
+    }
+    if (ntasksPerNodeDirective && ntasksPerNode === null) {
+      errors.push('Invalid --ntasks-per-node value. It must be a positive integer.');
+    }
+    if (ntasksPerGpuDirective && ntasksPerGpu === null) {
+      errors.push('Invalid --ntasks-per-gpu value. It must be a positive integer.');
+    }
+
+    let gpuCountFromHeader = parsedGpus || gresParseResult.gpus || null;
+    if (gpuCountFromHeader === null && parsedGpusPerNode !== null && nodeCount !== null) {
+      gpuCountFromHeader = parsedGpusPerNode * nodeCount;
+      warnings.push('Computed total GPUs from --gpus-per-node multiplied by parsed node count.');
+    }
+
+    let taskCountFromHeader = ntasks || null;
+    if (taskCountFromHeader === null && ntasksPerNode !== null && nodeCount !== null) {
+      taskCountFromHeader = ntasksPerNode * nodeCount;
+      warnings.push('Computed total tasks from --ntasks-per-node multiplied by parsed node count.');
+    }
+
+    if (taskCountFromHeader === null && ntasksPerGpu !== null && gpuCountFromHeader !== null) {
+      taskCountFromHeader = ntasksPerGpu * gpuCountFromHeader;
+      warnings.push('Computed total tasks from --ntasks-per-gpu multiplied by parsed GPU count.');
+    }
+
+    if (gpuCountFromHeader === null && parsedGpusPerTask !== null && taskCountFromHeader !== null) {
+      gpuCountFromHeader = parsedGpusPerTask * taskCountFromHeader;
+      warnings.push('Computed total GPUs from --gpus-per-task multiplied by parsed task count.');
+    }
+
+    if (gpuCountFromHeader === null && ntasks !== null && ntasksPerGpu !== null) {
+      gpuCountFromHeader = Math.ceil(ntasks / ntasksPerGpu);
+      warnings.push('Computed total GPUs from --ntasks divided by --ntasks-per-gpu (rounded up).');
+    }
+
+    const cpusPerTask = cpusPerTaskDirective ? parsePositiveInteger(cpusPerTaskDirective) : null;
+    const cpusPerGpu = cpusPerGpuDirective ? parsePositiveInteger(cpusPerGpuDirective) : null;
+    if (cpusPerTaskDirective && cpusPerTask === null) {
+      errors.push('Invalid --cpus-per-task value. It must be a positive integer.');
+    }
+    if (cpusPerGpuDirective && cpusPerGpu === null) {
+      errors.push('Invalid --cpus-per-gpu value. It must be a positive integer.');
+    }
+
+    let totalCoresFromHeader = null;
+    if (cpusPerTask !== null) {
+      if (taskCountFromHeader === null) {
+        taskCountFromHeader = 1;
+        warnings.push('No task-count directive found; assuming one task for --cpus-per-task.');
+      }
+      totalCoresFromHeader = cpusPerTask * taskCountFromHeader;
+      if (cpusPerGpu) {
+        warnings.push('Using --cpus-per-task/--ntasks for CPU total; --cpus-per-gpu was ignored.');
+      }
+    } else if (taskCountFromHeader !== null) {
+      totalCoresFromHeader = taskCountFromHeader;
+      if (!cpusPerGpu && !cpusPerTaskDirective) {
+        warnings.push('Assuming one CPU per task because --cpus-per-task was not provided.');
+      }
+    } else if (cpusPerGpu) {
+      if (gpuCountFromHeader !== null && gpuCountFromHeader > 0) {
+        totalCoresFromHeader = cpusPerGpu * gpuCountFromHeader;
+        warnings.push('Computed CPU cores from --cpus-per-gpu multiplied by parsed GPU count.');
+      } else {
+        errors.push('Cannot apply --cpus-per-gpu without a GPU count from --gpus or --gres.');
+      }
+    }
+
+    const parsedMemGb = memDirective ? parseMemoryDirectiveToGb(memDirective) : null;
+    if (memDirective && parsedMemGb === null) {
+      errors.push('Invalid --mem value. Use a number with optional K/M/G/T/P suffix.');
+    }
+
+    const parsedMemPerCpuGb = memPerCpuDirective ? parseMemoryDirectiveToGb(memPerCpuDirective) : null;
+    if (memPerCpuDirective && parsedMemPerCpuGb === null) {
+      errors.push('Invalid --mem-per-cpu value. Use a number with optional K/M/G/T/P suffix.');
+    }
+
+    const parsedMemPerGpuGb = memPerGpuDirective ? parseMemoryDirectiveToGb(memPerGpuDirective) : null;
+    if (memPerGpuDirective && parsedMemPerGpuGb === null) {
+      errors.push('Invalid --mem-per-gpu value. Use a number with optional K/M/G/T/P suffix.');
+    }
+
+    let finalMemGb = null;
+    if (parsedMemGb !== null) {
+      finalMemGb = parsedMemGb;
+      if (memPerCpuDirective || memPerGpuDirective) {
+        warnings.push('Multiple memory directives were provided; using --mem for total memory.');
+      }
+    } else if (parsedMemPerCpuGb !== null && totalCoresFromHeader !== null) {
+      finalMemGb = parsedMemPerCpuGb * totalCoresFromHeader;
+      warnings.push('Computed total memory from --mem-per-cpu multiplied by parsed CPU count.');
+      if (memPerGpuDirective) {
+        warnings.push('Using --mem-per-cpu for memory total; --mem-per-gpu was ignored.');
+      }
+    } else if (parsedMemPerGpuGb !== null && gpuCountFromHeader !== null) {
+      finalMemGb = parsedMemPerGpuGb * gpuCountFromHeader;
+      warnings.push('Computed total memory from --mem-per-gpu multiplied by parsed GPU count.');
+    } else if (parsedMemPerCpuGb !== null && totalCoresFromHeader === null) {
+      errors.push('Cannot apply --mem-per-cpu without parsed CPU directives.');
+    } else if (parsedMemPerGpuGb !== null && gpuCountFromHeader === null) {
+      errors.push('Cannot apply --mem-per-gpu without a parsed GPU count.');
+    }
+
+    if (errors.length > 0) {
+      setSbatchImportFeedback({
+        status: 'error',
+        errors,
+        warnings,
+        applied,
+        ignoredDirectives: parsed.ignoredDirectives,
+        nonSbatchLineCount: parsed.nonSbatchLineCount
+      });
+      return;
+    }
+
+    isApplyingSbatchImportRef.current = true;
+
+    const nextCluster = resolvedPartition.clusterKey;
+    const nextPartition = resolvedPartition.partitionKey;
+    if (!partitionDirective) {
+      warnings.push('No --partition directive found; defaulting to standard partition.');
+    }
+    if (nextCluster !== cluster) {
+      setCluster(nextCluster);
+      warnings.push(`Switched cluster to ${CLUSTER_CONFIG[nextCluster].label} to match parsed partition.`);
+      applied.push(`Cluster: ${CLUSTER_CONFIG[nextCluster].label}`);
+    }
+
+    setPartition(nextPartition);
+    applied.push(`Partition: ${CLUSTER_CONFIG[nextCluster].partitions[nextPartition].name}`);
+
+    const nextCores = Math.max(1, totalCoresFromHeader);
+    setCores(nextCores);
+    applied.push(`CPU cores: ${nextCores}`);
+
+    const nextMemoryGb = Math.max(1, Math.ceil(finalMemGb));
+    setMemory(nextMemoryGb);
+    applied.push(`Memory: ${nextMemoryGb} GB`);
+
+    const normalizedSeconds = Math.max(0, Math.floor(parsedSeconds));
+    const nextDays = Math.floor(normalizedSeconds / (24 * 3600));
+    const remAfterDays = normalizedSeconds % (24 * 3600);
+    const nextHours = Math.floor(remAfterDays / 3600);
+    const remAfterHours = remAfterDays % 3600;
+    const nextMinutes = Math.floor(remAfterHours / 60);
+    const nextSeconds = remAfterHours % 60;
+    setDays(nextDays);
+    setHours(nextHours);
+    setMinutes(nextMinutes);
+    setSeconds(nextSeconds);
+    applied.push(`Runtime: ${timeDirective}`);
+
+    const nextPartitionData = CLUSTER_CONFIG[nextCluster].partitions[nextPartition];
+    const gpuCount = gpuCountFromHeader || 0;
+    if (!nextPartitionData.hasGPU && gpuCount > 0) {
+      warnings.push(`GPU directives requested ${gpuCount} GPU(s), but ${nextPartitionData.name} is not a GPU-capable partition. Remove GPU directives or switch to a GPU partition.`);
+    }
+
+    setGpus(gpuCount);
+    if (gpuCount > 0) {
+      applied.push(`GPUs: ${gpuCount}`);
+    }
+
+    if (nextCluster === 'armis2' && nextPartition === 'gpu' && gresParseResult.gpuType) {
+      const isSupportedGpuType = ['v100', 'titanv'].includes(gresParseResult.gpuType);
+      if (isSupportedGpuType) {
+        setGpuType(gresParseResult.gpuType);
+        applied.push(`GPU type: ${gresParseResult.gpuType}`);
+      } else {
+        warnings.push(`Parsed GPU type "${gresParseResult.gpuType}" is not selectable in this calculator.`);
+      }
+    }
+
+    if (parsedArrayCount) {
+      setJobType('array');
+      setArrayJobCount(parsedArrayCount);
+      setIsArrayJob(true);
+      applied.push(`Array tasks: ${parsedArrayCount}`);
+      if (arrayDirective.includes('%')) {
+        warnings.push('Array throttle (e.g., %10) was ignored for cost because it limits concurrency, not task count.');
+      }
+    } else {
+      const inferredJobType = nextCores > 1 ? 'multicore' : 'standard';
+      setJobType(inferredJobType);
+      setIsArrayJob(false);
+      setArrayJobCount(1);
+      applied.push(`Job type: ${inferredJobType === 'multicore' ? 'Multicore' : 'Single Core'}`);
+    }
+
+    if (parsed.nonSbatchLineCount > 0) {
+      warnings.push(`Ignored ${parsed.nonSbatchLineCount} non-SBATCH line(s).`);
+    }
+    if (parsed.ignoredDirectives.length > 0) {
+      warnings.push(`Ignored ${parsed.ignoredDirectives.length} unsupported SBATCH directive(s).`);
+    }
+
+    setSbatchImportFeedback({
+      status: 'success',
+      errors: [],
+      warnings,
+      applied,
+      ignoredDirectives: parsed.ignoredDirectives,
+      nonSbatchLineCount: parsed.nonSbatchLineCount
+    });
   };
 
   // Helper function to check if a value is empty or invalid
@@ -292,6 +629,11 @@ function App() {
 
   // Update default values when partition changes
   useEffect(() => {
+    if (isApplyingSbatchImportRef.current) {
+      isApplyingSbatchImportRef.current = false;
+      return;
+    }
+
     const partitionData = PARTITION_RATES[partition];
     const defaultCores = jobType === 'standard' ? 1 : partitionData.defaultCores;
     setCores(defaultCores);
@@ -303,12 +645,6 @@ function App() {
       setGpuType('');
     }
   }, [partition, jobType, cluster]);
-
-  // Reset partition to 'standard' when cluster changes
-  useEffect(() => {
-    setPartition('standard');
-    setGpuType('');
-  }, [cluster]);
 
   // Update job configuration when job type changes
   useEffect(() => {
@@ -609,7 +945,7 @@ function App() {
               <select 
                 id="cluster"
                 value={cluster}
-                onChange={(e) => setCluster(e.target.value)}
+                onChange={handleClusterChange}
               >
                 {Object.entries(CLUSTER_CONFIG).map(([key, cfg]) => (
                   <option key={key} value={key}>{cfg.label}</option>
@@ -833,6 +1169,100 @@ function App() {
                 } maximum limit for {partition} partition. Please reduce the total runtime.
               </div>
             )}
+          </div>
+
+          <div className="form-section">
+            <div className="import-header-row">
+              <h3>Import SBATCH Header</h3>
+              <button
+                type="button"
+                className="import-toggle-button"
+                onClick={() => setShowSbatchImport(!showSbatchImport)}
+              >
+                {showSbatchImport ? 'Hide Import Tool' : 'Show Import Tool'}
+              </button>
+            </div>
+
+            <div className={`collapsible-content ${showSbatchImport ? 'expanded' : 'collapsed'}`}>
+              <div className="form-group">
+                <label htmlFor="sbatchHeaderInput">Paste existing SBATCH header/directives</label>
+                <textarea
+                  id="sbatchHeaderInput"
+                  className="sbatch-import-input"
+                  value={sbatchHeaderInput}
+                  onChange={(e) => {
+                    setSbatchHeaderInput(e.target.value);
+                    if (sbatchImportFeedback) {
+                      setSbatchImportFeedback(null);
+                    }
+                  }}
+                  placeholder={'#SBATCH --partition=standard\n#SBATCH --cpus-per-gpu=4\n#SBATCH --gres=gpu:2\n#SBATCH --mem=64G\n#SBATCH --time=02:00:00'}
+                />
+              </div>
+              <div className="import-actions">
+                <button
+                  type="button"
+                  onClick={handleLoadSbatchExample}
+                >
+                  Load Example Header
+                </button>
+                <button
+                  type="button"
+                  onClick={applyParsedSbatchHeader}
+                  disabled={!sbatchHeaderInput.trim()}
+                >
+                  Parse Header
+                </button>
+              </div>
+              <div className="partition-info" style={{ marginTop: '12px' }}>
+                <p>
+                  Required directives: <code>--time</code>, CPU/task sizing (<code>--ntasks</code>, <code>--ntasks-per-node</code>, <code>--ntasks-per-gpu</code>, <code>--cpus-per-task</code>, and/or <code>--cpus-per-gpu</code>), and memory (<code>--mem</code>, <code>--mem-per-cpu</code>, or <code>--mem-per-gpu</code>). If <code>--partition</code> is missing, the importer defaults to <code>standard</code>.
+                </p>
+                <p>
+                  Non-SBATCH lines and unsupported directives are ignored.
+                </p>
+              </div>
+
+              {sbatchImportFeedback && (
+                <div className="sbatch-import-feedback">
+                  <h4>
+                    {sbatchImportFeedback.status === 'success' ? 'Import Applied' : 'Import Errors'}
+                  </h4>
+
+                  {sbatchImportFeedback.errors.length > 0 && (
+                    <div>
+                      {sbatchImportFeedback.errors.map((errorText, index) => (
+                        <div key={`error-${index}`} className="warning-message">
+                          ⚠️ {errorText}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {sbatchImportFeedback.warnings.length > 0 && (
+                    <div className="import-message-group">
+                      <h5>Warnings</h5>
+                      {sbatchImportFeedback.warnings.map((warningText, index) => (
+                        <div key={`warning-${index}`} className="partition-info import-warning-text">
+                          {warningText}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {sbatchImportFeedback.applied.length > 0 && (
+                    <div className="import-message-group">
+                      <h5>Applied Values</h5>
+                      {sbatchImportFeedback.applied.map((appliedText, index) => (
+                        <div key={`applied-${index}`} className="partition-info import-applied-text">
+                          {appliedText}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="results">

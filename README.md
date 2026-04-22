@@ -8,6 +8,8 @@ A modern web application for calculating job costs on the University of Michigan
 - Multiple clusters: Great Lakes and Armis2
 - Multiple partitions per cluster (standard, largemem, gpu, and more)
 - Real-time cost updates as you adjust parameters
+- Import from existing SLURM headers by pasting `#SBATCH` directives
+- Import feedback for missing required directives, parse errors, and ignored lines
 - Responsive design for desktop and mobile
 - Detailed breakdown of resources and dominant billing factor
 
@@ -61,6 +63,14 @@ npm run build
  
 The built files will be in the `dist` directory.
 
+### Running Tests
+
+```bash
+npm test
+```
+
+Parser unit tests live in `src/sbatchParser.test.js`.
+
 ## Usage
 
 1. **Select Cluster**: Choose Great Lakes or Armis2
@@ -77,6 +87,46 @@ The built files will be in the `dist` directory.
 5. **Set Runtime**: Enter the expected job duration (days, hours, minutes, seconds)
 6. **View Cost**: The estimated cost will be calculated automatically, including detailed breakdown
 7. **Generate SLURM Script**: Expand the SLURM script section to view and copy an example batch script
+8. **Import Existing Header (Optional)**: Paste `#SBATCH` lines from an existing script and click **Parse Header** to populate fields
+  - The import panel is collapsed by default; use **Show Import Tool** to expand it
+  - Use **Load Example Header** to populate a sample import template quickly
+
+### SBATCH Header Import
+
+The parser reads only lines beginning with `#SBATCH` and ignores all other script text.
+
+Required directives for applying an import:
+
+- `--time`
+- CPU/task sizing (`--ntasks`, `--ntasks-per-node`, `--ntasks-per-gpu`, `--cpus-per-task`, and/or `--cpus-per-gpu`)
+- Memory (`--mem`, `--mem-per-cpu`, or `--mem-per-gpu`)
+
+Supported directives currently used for estimation:
+
+- `--partition`, `-p`
+- `--cpus-per-task`, `-c`
+- `--cpus-per-gpu`
+- `--ntasks`, `-n`
+- `--nodes`, `-N`
+- `--ntasks-per-node`
+- `--ntasks-per-gpu`
+- `--mem`
+- `--mem-per-cpu`
+- `--mem-per-gpu`
+- `--time`, `-t`
+- `--gres` (GPU parsing)
+- `--gpus`
+- `--gpus-per-node`
+- `--gpus-per-task`
+- `--array`
+
+Notes:
+
+- If `--partition` is omitted, the importer defaults to `standard` for the currently selected cluster.
+- If `--mem`, `--mem-per-cpu`, and/or `--mem-per-gpu` are combined, `--mem` takes precedence, then `--mem-per-cpu`, then `--mem-per-gpu`.
+- `--array` throttles like `%10` are ignored for cost because they limit concurrency, not total tasks.
+- If GPU directives are present but the selected partition is not GPU-capable, a warning is shown advising you to remove GPU directives or switch to a GPU partition.
+- Unsupported `#SBATCH` directives are ignored and reported in warnings.
 
 ## Cost Calculation
 
