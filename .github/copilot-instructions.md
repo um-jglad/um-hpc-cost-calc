@@ -34,6 +34,8 @@ Remember to update the README.md and this file as you make changes to the codeba
 
 ## 4. Developer Workflows
 
+- Runtime requirements:
+  - Node.js `20.19+` or `22.12+` (required by Vite 8)
 - Local development:
   ```bash
   npm install

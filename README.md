@@ -32,7 +32,7 @@ A modern web application for calculating job costs on the University of Michigan
 
 ### Prerequisites
 
-- Node.js (version 16 or higher)
+- Node.js (version 20.19+ or 22.12+)
 - npm or yarn
 
 ### Installation
