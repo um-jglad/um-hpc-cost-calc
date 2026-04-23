@@ -122,10 +122,11 @@ Supported directives currently used for estimation:
 
 Notes:
 
-- If `--partition` is omitted, the importer defaults to `standard` for the currently selected cluster.
+- If `--partition` is omitted, the importer defaults to `gpu` when GPU directives are present (`--gpus`, `--gpus-per-node`, `--gpus-per-task`, `--cpus-per-gpu`, `--ntasks-per-gpu`, `--mem-per-gpu`, or GPU `--gres`) and shows a warning. Otherwise it defaults to `standard` for the currently selected cluster.
+- If you switch clusters after pasting a header, the importer automatically reparses against the selected cluster instead of resetting fields to defaults.
 - If `--mem`, `--mem-per-cpu`, and/or `--mem-per-gpu` are combined, `--mem` takes precedence, then `--mem-per-cpu`, then `--mem-per-gpu`.
 - `--array` throttles like `%10` are ignored for cost because they limit concurrency, not total tasks.
-- If GPU directives are present but the selected partition is not GPU-capable, a warning is shown advising you to remove GPU directives or switch to a GPU partition.
+- If GPU directives are present and a non-GPU partition is selected, the importer switches to the cluster GPU partition and shows a warning about the change.
 - Unsupported `#SBATCH` directives are ignored and reported in warnings.
 
 ## Cost Calculation

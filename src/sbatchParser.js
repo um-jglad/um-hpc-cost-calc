@@ -226,6 +226,33 @@ export const parsePositiveInteger = (raw) => {
   return num;
 };
 
+export const hasGpuRequestInDirectives = (directives = {}) => {
+  const hasNonEmptyValue = (key) => {
+    const value = directives[key];
+    return typeof value === 'string' ? value.trim().length > 0 : Boolean(value);
+  };
+
+  const gpuRequestKeys = [
+    'gpus',
+    'gpus-per-node',
+    'gpus-per-task',
+    'cpus-per-gpu',
+    'ntasks-per-gpu',
+    'mem-per-gpu'
+  ];
+
+  if (gpuRequestKeys.some(hasNonEmptyValue)) {
+    return true;
+  }
+
+  const gresValue = directives.gres;
+  if (typeof gresValue === 'string' && gresValue.trim()) {
+    return /(^|,)\s*gpu(?::|$)/i.test(gresValue.trim());
+  }
+
+  return false;
+};
+
 export const parseArrayTaskCount = (arraySpec) => {
   const spec = (arraySpec || '').split('%')[0].trim();
   if (!spec) return null;

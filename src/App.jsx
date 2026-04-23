@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   EXAMPLE_SBATCH_HEADER,
+  hasGpuRequestInDirectives,
   parseArrayTaskCount,
   parseGres,
   parseGpuCountSpec,
@@ -225,16 +226,24 @@ function App() {
 
   const handleClusterChange = (e) => {
     const nextCluster = e.target.value;
+    setGpuType('');
+
+    if (sbatchHeaderInput.trim()) {
+      applyParsedSbatchHeader({ clusterOverride: nextCluster, keepClusterSelection: true });
+      return;
+    }
+
     setCluster(nextCluster);
     setPartition('standard');
-    setGpuType('');
   };
 
-  const applyParsedSbatchHeader = () => {
+  const applyParsedSbatchHeader = ({ clusterOverride = cluster, keepClusterSelection = false } = {}) => {
     const parsed = parseSbatchHeader(sbatchHeaderInput);
     const errors = [];
     const warnings = [];
     const applied = [];
+    const activeClusterKey = clusterOverride;
+    const activePartitionRates = CLUSTER_CONFIG[activeClusterKey].partitions;
 
     if (!parsed.sbatchLineCount) {
       setSbatchImportFeedback({
@@ -280,9 +289,20 @@ function App() {
       errors.push('Missing required memory directive: provide --mem, --mem-per-cpu, or --mem-per-gpu.');
     }
 
-    const resolvedPartition = partitionDirective
-      ? resolvePartition(partitionDirective, CLUSTER_CONFIG, cluster, PARTITION_RATES)
-      : { clusterKey: cluster, partitionKey: 'standard' };
+    const hasGpuRequest = hasGpuRequestInDirectives(directives);
+    const defaultPartitionKey = hasGpuRequest && activePartitionRates.gpu ? 'gpu' : 'standard';
+    let resolvedPartition = partitionDirective
+      ? resolvePartition(
+          partitionDirective,
+          keepClusterSelection ? { [activeClusterKey]: CLUSTER_CONFIG[activeClusterKey] } : CLUSTER_CONFIG,
+          activeClusterKey,
+          activePartitionRates
+        )
+      : { clusterKey: activeClusterKey, partitionKey: defaultPartitionKey };
+    if (partitionDirective && !resolvedPartition && keepClusterSelection) {
+      resolvedPartition = { clusterKey: activeClusterKey, partitionKey: defaultPartitionKey };
+      warnings.push(`Partition "${partitionDirective}" is unavailable on ${CLUSTER_CONFIG[activeClusterKey].label}; using ${defaultPartitionKey}.`);
+    }
     if (partitionDirective && !resolvedPartition) {
       errors.push(`Unable to map partition "${partitionDirective}" to a supported partition in this app.`);
     }
@@ -451,14 +471,30 @@ function App() {
     isApplyingSbatchImportRef.current = true;
 
     const nextCluster = resolvedPartition.clusterKey;
-    const nextPartition = resolvedPartition.partitionKey;
+    let nextPartition = resolvedPartition.partitionKey;
     if (!partitionDirective) {
-      warnings.push('No --partition directive found; defaulting to standard partition.');
+      if (hasGpuRequest && defaultPartitionKey === 'gpu') {
+        warnings.push('No --partition directive found. GPU directives were detected, so --partition=gpu was assumed.');
+      } else if (hasGpuRequest) {
+        warnings.push('No --partition directive found. GPU directives were detected, but no gpu partition is available; defaulting to standard partition.');
+      } else {
+        warnings.push('No --partition directive found; defaulting to standard partition.');
+      }
     }
     if (nextCluster !== cluster) {
       setCluster(nextCluster);
       warnings.push(`Switched cluster to ${CLUSTER_CONFIG[nextCluster].label} to match parsed partition.`);
       applied.push(`Cluster: ${CLUSTER_CONFIG[nextCluster].label}`);
+    }
+
+    const initiallyResolvedPartition = CLUSTER_CONFIG[nextCluster].partitions[nextPartition];
+    if (hasGpuRequest && initiallyResolvedPartition && !initiallyResolvedPartition.hasGPU) {
+      if (CLUSTER_CONFIG[nextCluster].partitions.gpu) {
+        nextPartition = 'gpu';
+        warnings.push(`GPU directives were detected, but ${initiallyResolvedPartition.name} is not GPU-capable. Switched to GPU partition.`);
+      } else {
+        warnings.push(`GPU directives were detected, but ${initiallyResolvedPartition.name} is not GPU-capable and no gpu partition is available to switch to.`);
+      }
     }
 
     setPartition(nextPartition);

@@ -35,6 +35,9 @@ Remember to update the README.md and this file as you make changes to the codeba
 - **Collapsible sections**: controlled by boolean `showSbatch` and CSS classes `expanded` / `collapsed`
 - **SBATCH import**: parser should only read `#SBATCH` lines and ignore unrelated script text
 - **SBATCH import directives**: include CPU/GPU forms such as `--cpus-per-gpu`, `--gpus-per-node`, `--gpus-per-task`, `--ntasks-per-node`, `--ntasks-per-gpu`, and surface warnings for ambiguous or mismatched requests
+- **Missing partition fallback**: if GPU directives are present but `--partition` is omitted, assume `--partition=gpu` and show an import warning about the assumption
+- **GPU/non-GPU mismatch handling**: if GPU directives are present but a non-GPU partition is selected, switch to `--partition=gpu` and warn about the remap
+- **Cluster-switch behavior after import**: when a header has been pasted, changing clusters should trigger a reparse for that cluster rather than resetting fields to partition defaults
 - **Time clamping**: all runtime inputs clamped to partition limits (e.g., 14 days, 4h debug)
 
 ## 4. Developer Workflows

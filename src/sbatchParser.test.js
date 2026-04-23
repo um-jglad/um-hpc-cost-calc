@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hasGpuRequestInDirectives,
   parseArrayTaskCount,
   parseGres,
   parseGpuCountSpec,
@@ -98,6 +99,20 @@ describe('parseGres', () => {
     expect(parseGres('gpu:2')).toEqual({ gpus: 2, gpuType: '' });
     expect(parseGres('gpu:v100:1')).toEqual({ gpus: 1, gpuType: 'v100' });
     expect(parseGres('nvme:20g,gpu:titanv:3')).toEqual({ gpus: 3, gpuType: 'titanv' });
+  });
+});
+
+describe('hasGpuRequestInDirectives', () => {
+  it('returns true for gpu request directives', () => {
+    expect(hasGpuRequestInDirectives({ gpus: '2' })).toBe(true);
+    expect(hasGpuRequestInDirectives({ 'gpus-per-node': 'a100:2' })).toBe(true);
+    expect(hasGpuRequestInDirectives({ 'ntasks-per-gpu': '4' })).toBe(true);
+    expect(hasGpuRequestInDirectives({ gres: 'nvme:20g,gpu:v100:1' })).toBe(true);
+  });
+
+  it('returns false when gpu directives are absent', () => {
+    expect(hasGpuRequestInDirectives({ partition: 'standard', time: '01:00:00' })).toBe(false);
+    expect(hasGpuRequestInDirectives({ gres: 'nvme:20g' })).toBe(false);
   });
 });
 
