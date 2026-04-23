@@ -1173,7 +1173,7 @@ function App() {
 
           <div className="form-section">
             <div className="import-header-row">
-              <h3>Import SBATCH Header</h3>
+              <h3>Import Existing Script</h3>
               <button
                 type="button"
                 className="import-toggle-button"
@@ -1182,7 +1182,6 @@ function App() {
                 {showSbatchImport ? 'Hide Import Tool' : 'Show Import Tool'}
               </button>
             </div>
-
             <div className={`collapsible-content ${showSbatchImport ? 'expanded' : 'collapsed'}`}>
               <div className="form-group">
                 <label htmlFor="sbatchHeaderInput">Paste existing SBATCH header/directives</label>
@@ -1213,14 +1212,6 @@ function App() {
                 >
                   Parse Header
                 </button>
-              </div>
-              <div className="partition-info" style={{ marginTop: '12px' }}>
-                <p>
-                  Required directives: <code>--time</code>, CPU/task sizing (<code>--ntasks</code>, <code>--ntasks-per-node</code>, <code>--ntasks-per-gpu</code>, <code>--cpus-per-task</code>, and/or <code>--cpus-per-gpu</code>), and memory (<code>--mem</code>, <code>--mem-per-cpu</code>, or <code>--mem-per-gpu</code>). If <code>--partition</code> is missing, the importer defaults to <code>standard</code>.
-                </p>
-                <p>
-                  Non-SBATCH lines and unsupported directives are ignored.
-                </p>
               </div>
 
               {sbatchImportFeedback && (
