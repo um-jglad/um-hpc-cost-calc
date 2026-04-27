@@ -12,7 +12,9 @@ Remember to update the README.md and this file as you make changes to the codeba
   - `vite.config.js`: configures Vite with `base: '/um-gl-cost-calc/'` for GitHub Pages
 - Source code in `src/`:
   - `main.jsx`: renders the app into the DOM
-  - `App.jsx`: single primary component containing all UI and logic
+  - `App.jsx`: primary component containing UI, state, and cost logic
+  - `sbatchParser.js`: SBATCH parsing helpers used by the import UI
+  - `sbatchParser.test.js`: parser unit tests
   - `index.css`: global styles and layout
 
 ## 2. Architecture & Data Flow
@@ -22,6 +24,7 @@ Remember to update the README.md and this file as you make changes to the codeba
   - State management via React `useState` / `useEffect` hooks
   - Input validation helpers (`isValueEmpty`, `isValueOutOfRange`, etc.)
   - Cost calculation (`calculateCost`) using TRES billing formula
+  - SBATCH header parsing/import utilities for existing scripts
   - SLURM script generation (`generateSbatchScript`)
 - UI is a simple form → compute cost → display breakdown → optional expand for SLURM script
 
@@ -30,6 +33,11 @@ Remember to update the README.md and this file as you make changes to the codeba
 - **Inline styling** for dynamic elements; use `index.css` for static layout
 - **Validation classes**: input receives `warning` or `error` CSS class based on out-of-range values
 - **Collapsible sections**: controlled by boolean `showSbatch` and CSS classes `expanded` / `collapsed`
+- **SBATCH import**: parser should only read `#SBATCH` lines and ignore unrelated script text
+- **SBATCH import directives**: include CPU/GPU forms such as `--cpus-per-gpu`, `--gpus-per-node`, `--gpus-per-task`, `--ntasks-per-node`, `--ntasks-per-gpu`, and surface warnings for ambiguous or mismatched requests
+- **Missing partition fallback**: if GPU directives are present but `--partition` is omitted, assume `--partition=gpu` and show an import warning about the assumption
+- **GPU/non-GPU mismatch handling**: if GPU directives are present but a non-GPU partition is selected, switch to `--partition=gpu` and warn about the remap
+- **Cluster-switch behavior after import**: when a header has been pasted, changing clusters should trigger a reparse for that cluster rather than resetting fields to partition defaults
 - **Time clamping**: all runtime inputs clamped to partition limits (e.g., 14 days, 4h debug)
 
 ## 4. Developer Workflows
@@ -59,6 +67,7 @@ Remember to update the README.md and this file as you make changes to the codeba
 ## 6. Contribution Notes
 
 - Keep business logic in `App.jsx` self-contained; extract to helper modules only if repeated or for clarity
+- SBATCH parser helpers can live in `src/sbatchParser.js` so they are testable independently of UI
 - If adding new partitions, update `PARTITION_RATES` and ensure default values and limits are correct
 - When modifying SLURM script, maintain existing comment structure and placeholder values (`YOUR_ACCOUNT`, `YOUR_EMAIL`)
 - If a feature is implemented or changed, review the  README.md and update it as needed.
