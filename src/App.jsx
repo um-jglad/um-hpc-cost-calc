@@ -422,7 +422,7 @@ function App() {
     }
 
     if (totalCoresFromHeader === null) {
-      errors.push('Cannot determine CPU core count from the provided directives. Ensure task counts, node counts, or GPU counts are fully specified and consistent.');
+      errors.push('Cannot determine CPU core count from the provided directives. Check that dependent counts are also specified (e.g., --nodes when using --ntasks-per-node, or --gpus/--gres when using --ntasks-per-gpu).');
     }
 
     const parsedMemGb = memDirective ? parseMemoryDirectiveToGb(memDirective) : null;

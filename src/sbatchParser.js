@@ -136,8 +136,8 @@ export const parseSbatchHeader = (input) => {
     const withoutComment = directiveBody.split(/\s+#/)[0].trim();
 
     // Detect short options with concatenated values (e.g. -c4, -N2, -t01:00:00).
-    // These have exactly one dash, one letter, and a non-separator value immediately after.
-    const concatShortMatch = withoutComment.match(/^(-[a-zA-Z])([^=\s].*)$/);
+    // These have exactly one dash, one letter, and a value starting with an alphanumeric character.
+    const concatShortMatch = withoutComment.match(/^(-[a-zA-Z])([0-9a-zA-Z].*)$/);
     let keyRaw, valueRaw;
     if (concatShortMatch) {
       keyRaw = concatShortMatch[1];
