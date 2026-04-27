@@ -42,6 +42,27 @@ module load python
     expect(parsed.ignoredDirectives.length).toBe(1);
     expect(parsed.ignoredDirectives[0]).toContain('--mail-type=END');
   });
+
+  it('handles concatenated short options like -c4, -N2, -t01:00:00', () => {
+    const input = `#SBATCH -c4
+#SBATCH -N2
+#SBATCH -t01:00:00
+#SBATCH -n8
+#SBATCH -p gpu`;
+
+    const parsed = parseSbatchHeader(input);
+
+    expect(parsed.directives['cpus-per-task']).toBe('4');
+    expect(parsed.directives.nodes).toBe('2');
+    expect(parsed.directives.time).toBe('01:00:00');
+    expect(parsed.directives.ntasks).toBe('8');
+    expect(parsed.directives.partition).toBe('gpu');
+  });
+
+  it('handles concatenated short option for node ranges like -N2-4', () => {
+    const parsed = parseSbatchHeader('#SBATCH -N2-4');
+    expect(parsed.directives.nodes).toBe('2-4');
+  });
 });
 
 describe('parseTimeDirectiveToSeconds', () => {

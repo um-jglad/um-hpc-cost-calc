@@ -168,6 +168,7 @@ function App() {
   const [isCopied, setIsCopied] = useState(false);
   const [sbatchHeaderInput, setSbatchHeaderInput] = useState('');
   const [sbatchImportFeedback, setSbatchImportFeedback] = useState(null);
+  const [importAppliedNonce, setImportAppliedNonce] = useState(0);
   const isApplyingSbatchImportRef = useRef(false);
   const sbatchRef = useRef(null);
 
@@ -420,6 +421,10 @@ function App() {
       }
     }
 
+    if (totalCoresFromHeader === null) {
+      errors.push('Cannot determine CPU core count from the provided directives. Ensure task counts, node counts, or GPU counts are fully specified and consistent.');
+    }
+
     const parsedMemGb = memDirective ? parseMemoryDirectiveToGb(memDirective) : null;
     if (memDirective && parsedMemGb === null) {
       errors.push('Invalid --mem value. Use a number with optional K/M/G/T/P suffix.');
@@ -483,7 +488,9 @@ function App() {
     }
     if (nextCluster !== cluster) {
       setCluster(nextCluster);
-      warnings.push(`Switched cluster to ${CLUSTER_CONFIG[nextCluster].label} to match parsed partition.`);
+      if (!keepClusterSelection) {
+        warnings.push(`Switched cluster to ${CLUSTER_CONFIG[nextCluster].label} to match parsed partition.`);
+      }
       applied.push(`Cluster: ${CLUSTER_CONFIG[nextCluster].label}`);
     }
 
@@ -573,6 +580,7 @@ function App() {
       ignoredDirectives: parsed.ignoredDirectives,
       nonSbatchLineCount: parsed.nonSbatchLineCount
     });
+    setImportAppliedNonce((n) => n + 1);
   };
 
   // Helper function to check if a value is empty or invalid
@@ -681,6 +689,14 @@ function App() {
       setGpuType('');
     }
   }, [partition, jobType, cluster]);
+
+  // Safety net: ensure the import flag is always cleared after a successful import,
+  // even when partition/jobType/cluster did not change (so the effect above didn't fire).
+  useEffect(() => {
+    if (importAppliedNonce > 0) {
+      isApplyingSbatchImportRef.current = false;
+    }
+  }, [importAppliedNonce]);
 
   // Update job configuration when job type changes
   useEffect(() => {

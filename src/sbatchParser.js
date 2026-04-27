@@ -134,15 +134,26 @@ export const parseSbatchHeader = (input) => {
     }
 
     const withoutComment = directiveBody.split(/\s+#/)[0].trim();
-    const keyValueMatch = withoutComment.match(/^(-{1,2}[^\s=]+)(?:\s*=\s*|\s+)?(.*)$/);
 
-    if (!keyValueMatch) {
-      ignoredDirectives.push(withoutComment);
-      return;
+    // Detect short options with concatenated values (e.g. -c4, -N2, -t01:00:00).
+    // These have exactly one dash, one letter, and a non-separator value immediately after.
+    const concatShortMatch = withoutComment.match(/^(-[a-zA-Z])([^=\s].*)$/);
+    let keyRaw, valueRaw;
+    if (concatShortMatch) {
+      keyRaw = concatShortMatch[1];
+      valueRaw = concatShortMatch[2];
+    } else {
+      const keyValueMatch = withoutComment.match(/^(-{1,2}[^\s=]+)(?:\s*=\s*|\s+)?(.*)$/);
+      if (!keyValueMatch) {
+        ignoredDirectives.push(withoutComment);
+        return;
+      }
+      keyRaw = keyValueMatch[1];
+      valueRaw = (keyValueMatch[2] || '').trim();
     }
 
-    const normalizedKey = normalizeDirectiveKey(keyValueMatch[1]);
-    const value = (keyValueMatch[2] || '').trim();
+    const normalizedKey = normalizeDirectiveKey(keyRaw);
+    const value = valueRaw.trim();
 
     if (!SUPPORTED_SBATCH_KEYS.has(normalizedKey)) {
       ignoredDirectives.push(withoutComment);

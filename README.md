@@ -69,7 +69,7 @@ The built files will be in the `dist` directory.
 npm test
 ```
 
-Parser unit tests live in `src/sbatchParser.test.js`.
+Unit tests live in `src/sbatchParser.test.js` (parser functions) and `src/App.test.jsx` (UI integration).
 
 ## Usage
 
