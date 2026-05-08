@@ -170,9 +170,44 @@ describe('App SBATCH import cluster reparse', () => {
     expect(container.textContent).not.toContain('⚠️ Standard jobs are limited to 1 core.');
 
     await clickButtonByText(container, 'Show SLURM Script');
+    // Resource directives must be preserved verbatim from the import
     expect(container.textContent).toContain('#SBATCH --ntasks=4');
     expect(container.textContent).toContain('#SBATCH --cpus-per-task=1');
     expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
     expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=4');
+    expect(container.textContent).toContain('#SBATCH --mem=1g');
+    expect(container.textContent).not.toContain('#SBATCH --mem=1G');
+  });
+
+  it('preserves complex GPU resource directives verbatim in generated script', async () => {
+    await clickButtonByText(container, 'Show Import Tool');
+
+    const sbatchInput = container.querySelector('#sbatchHeaderInput');
+    const importedScript = [
+      '#SBATCH --partition=gpu',
+      '#SBATCH --ntasks-per-gpu=4',
+      '#SBATCH --cpus-per-task=2',
+      '#SBATCH --mem-per-cpu=4g',
+      '#SBATCH --gpus=2',
+      '#SBATCH --time=00:05:00'
+    ].join('\n');
+
+    await act(async () => {
+      setControlValue(sbatchInput, importedScript);
+    });
+
+    await clickButtonByText(container, 'Parse Header');
+    await clickButtonByText(container, 'Show SLURM Script');
+
+    // All original resource directives must appear verbatim
+    expect(container.textContent).toContain('#SBATCH --ntasks-per-gpu=4');
+    expect(container.textContent).toContain('#SBATCH --cpus-per-task=2');
+    expect(container.textContent).toContain('#SBATCH --mem-per-cpu=4g');
+    expect(container.textContent).toContain('#SBATCH --gpus=2');
+    // Must NOT emit translated normalized forms
+    expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
+    expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=16');
+    expect(container.textContent).not.toContain('#SBATCH --mem=64G');
+    expect(container.textContent).not.toContain('#SBATCH --gres=gpu:2');
   });
 });

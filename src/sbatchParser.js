@@ -17,6 +17,24 @@ const SUPPORTED_SBATCH_KEYS = new Set([
   'gpus-per-task'
 ]);
 
+// Resource directives to pass through verbatim when regenerating a script from an imported header.
+// Excludes partition, time, and array which are always regenerated from current form state.
+const RESOURCE_PASSTHROUGH_KEYS = new Set([
+  'cpus-per-task',
+  'cpus-per-gpu',
+  'ntasks',
+  'nodes',
+  'ntasks-per-node',
+  'ntasks-per-gpu',
+  'mem',
+  'mem-per-cpu',
+  'mem-per-gpu',
+  'gres',
+  'gpus',
+  'gpus-per-node',
+  'gpus-per-task'
+]);
+
 export const EXAMPLE_SBATCH_HEADER = `#SBATCH --job-name=example-job
 #SBATCH --partition=standard
 #SBATCH --cpus-per-gpu=4
@@ -116,6 +134,7 @@ export const parseSbatchHeader = (input) => {
   const ignoredDirectives = [];
   const passthroughSbatchDirectives = [];
   const passthroughScriptLines = [];
+  const rawResourceDirectiveLines = [];
   let sbatchLineCount = 0;
   let nonSbatchLineCount = 0;
 
@@ -175,6 +194,9 @@ export const parseSbatchHeader = (input) => {
       }
 
       directives[normalizedKey] = value;
+      if (RESOURCE_PASSTHROUGH_KEYS.has(normalizedKey)) {
+        rawResourceDirectiveLines.push(directiveLine);
+      }
     });
   });
 
@@ -183,6 +205,7 @@ export const parseSbatchHeader = (input) => {
     ignoredDirectives,
     passthroughSbatchDirectives,
     passthroughScriptLines,
+    rawResourceDirectiveLines,
     sbatchLineCount,
     nonSbatchLineCount
   };

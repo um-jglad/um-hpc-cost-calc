@@ -169,7 +169,7 @@ function App() {
   const [sbatchHeaderInput, setSbatchHeaderInput] = useState('');
   const [sbatchImportFeedback, setSbatchImportFeedback] = useState(null);
   const [importedScriptExtras, setImportedScriptExtras] = useState({ sbatchDirectives: [], scriptLines: [] });
-  const [importedCpuLayout, setImportedCpuLayout] = useState(null);
+  const [importedRawResourceDirectives, setImportedRawResourceDirectives] = useState(null);
   const [importAppliedNonce, setImportAppliedNonce] = useState(0);
   const isApplyingSbatchImportRef = useRef(false);
   const sbatchRef = useRef(null);
@@ -226,7 +226,7 @@ function App() {
     setSbatchHeaderInput(EXAMPLE_SBATCH_HEADER);
     setSbatchImportFeedback(null);
     setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
-    setImportedCpuLayout(null);
+    setImportedRawResourceDirectives(null);
   };
 
   const handleClusterChange = (e) => {
@@ -252,7 +252,7 @@ function App() {
 
     if (!parsed.sbatchLineCount) {
       setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
-      setImportedCpuLayout(null);
+      setImportedRawResourceDirectives(null);
       setSbatchImportFeedback({
         status: 'error',
         errors: ['No SBATCH directives found. Paste header lines that begin with #SBATCH.'],
@@ -469,7 +469,7 @@ function App() {
 
     if (errors.length > 0) {
       setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
-      setImportedCpuLayout(null);
+      setImportedRawResourceDirectives(null);
       setSbatchImportFeedback({
         status: 'error',
         errors,
@@ -592,13 +592,9 @@ function App() {
       sbatchDirectives: parsed.passthroughSbatchDirectives || [],
       scriptLines: parsed.passthroughScriptLines || []
     });
-    setImportedCpuLayout(
-      ntasks !== null && cpusPerTask !== null
-        ? {
-            ntasks,
-            cpusPerTask,
-            totalCores: ntasks * cpusPerTask
-          }
+    setImportedRawResourceDirectives(
+      parsed.rawResourceDirectiveLines && parsed.rawResourceDirectiveLines.length > 0
+        ? parsed.rawResourceDirectiveLines
         : null
     );
     setImportAppliedNonce((n) => n + 1);
@@ -825,12 +821,6 @@ function App() {
     const memoryPerNode = jobType === 'multicore' ? clampedMemory : Math.ceil(clampedMemory / clampedCores) * clampedCores;
     const importedSbatchDirectives = importedScriptExtras.sbatchDirectives || [];
     const importedScriptLines = importedScriptExtras.scriptLines || [];
-    const shouldPreserveImportedTaskLayout = (
-      jobType === 'multicore'
-      && importedCpuLayout
-      && importedCpuLayout.ntasks > 0
-      && importedCpuLayout.totalCores === clampedCores
-    );
     const hasImportedAccount = importedSbatchDirectives.some((line) => /^#SBATCH\s+--account\b/i.test(line));
     const hasImportedMailType = importedSbatchDirectives.some((line) => /^#SBATCH\s+--mail-type\b/i.test(line));
     const hasImportedMailUser = importedSbatchDirectives.some((line) => /^#SBATCH\s+--mail-user\b/i.test(line));
@@ -839,29 +829,29 @@ function App() {
     script += `#SBATCH --job-name=${jobType === 'standard' ? 'single-core' : jobType}-job\n`;
     script += `#SBATCH --partition=${partition}\n`;
     
-    if (jobType === 'array') {
+    if (importedRawResourceDirectives && importedRawResourceDirectives.length > 0) {
+      // Emit original imported resource directives verbatim — no translation.
+      script += `${importedRawResourceDirectives.join('\n')}\n`;
+    } else if (jobType === 'array') {
       // Array jobs should not have --nodes or --ntasks
       // --cpus-per-task should equal the number of CPUs requested
       script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
+      script += `#SBATCH --mem=${clampedMemory}G\n`;
     } else if (jobType === 'multicore') {
       script += `#SBATCH --nodes=1\n`;
-      if (shouldPreserveImportedTaskLayout) {
-        script += `#SBATCH --ntasks=${importedCpuLayout.ntasks}\n`;
-        script += `#SBATCH --cpus-per-task=${importedCpuLayout.cpusPerTask}\n`;
-      } else {
-        script += `#SBATCH --ntasks=1\n`;
-        script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
-      }
+      script += `#SBATCH --ntasks=1\n`;
+      script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
+      script += `#SBATCH --mem=${memoryPerNode}G\n`;
     } else {
       script += `#SBATCH --nodes=1\n`;
       script += `#SBATCH --ntasks=${clampedCores}\n`;
       script += `#SBATCH --cpus-per-task=1\n`;
+      script += `#SBATCH --mem=${memoryPerNode}G\n`;
     }
     
-    script += `#SBATCH --mem=${memoryPerNode}G\n`;
     script += `#SBATCH --time=${formatTimeForSlurm()}\n`;
     
-    if (currentPartition.hasGPU && clampedGpus > 0) {
+    if (!importedRawResourceDirectives && currentPartition.hasGPU && clampedGpus > 0) {
       if (cluster === 'armis2' && partition === 'gpu' && gpuType) {
         script += `#SBATCH --gres=gpu:${gpuType}:${clampedGpus}\n`;
       } else {
