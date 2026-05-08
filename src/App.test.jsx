@@ -145,16 +145,20 @@ describe('App SBATCH import cluster reparse', () => {
     expect(container.textContent).toContain('Retained 1 unsupported SBATCH directive(s) in the generated script example (not used for estimation).');
   });
 
-  it('preserves imported ntasks with cpus-per-task=1 in generated script', async () => {
+  it('sets job type to multicore for imported multi-core requests on standard partition', async () => {
     await clickButtonByText(container, 'Show Import Tool');
 
+    const jobTypeInput = container.querySelector('#jobType');
     const sbatchInput = container.querySelector('#sbatchHeaderInput');
     const importedScript = [
+      '#SBATCH --job-name=bs_simple',
+      '#SBATCH --output=logs/%x/%j.out',
       '#SBATCH --partition=standard',
       '#SBATCH --cpus-per-task=1',
       '#SBATCH --ntasks=4',
-      '#SBATCH --mem=16G',
-      '#SBATCH --time=00:20:00'
+      '#SBATCH --time=00:05:00',
+      '#SBATCH --mem=1g',
+      '#SBATCH --mail-type=ALL'
     ].join('\n');
 
     await act(async () => {
@@ -162,11 +166,7 @@ describe('App SBATCH import cluster reparse', () => {
     });
 
     await clickButtonByText(container, 'Parse Header');
-    await clickButtonByText(container, 'Show SLURM Script');
-
-    expect(container.textContent).toContain('#SBATCH --ntasks=4');
-    expect(container.textContent).toContain('#SBATCH --cpus-per-task=1');
-    expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
-    expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=4');
+    expect(jobTypeInput.value).toBe('multicore');
+    expect(container.textContent).not.toContain('⚠️ Standard jobs are limited to 1 core.');
   });
 });

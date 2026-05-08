@@ -562,14 +562,7 @@ function App() {
         warnings.push('Array throttle (e.g., %10) was ignored for cost because it limits concurrency, not task count.');
       }
     } else {
-      let inferredJobType = nextCores > 1 ? 'multicore' : 'standard';
-      if (cpusPerTask !== null && taskCountFromHeader !== null) {
-        if (cpusPerTask === 1) {
-          inferredJobType = 'standard';
-        } else if (taskCountFromHeader === 1) {
-          inferredJobType = 'multicore';
-        }
-      }
+      const inferredJobType = nextCores > 1 ? 'multicore' : 'standard';
       setJobType(inferredJobType);
       setIsArrayJob(false);
       setArrayJobCount(1);
