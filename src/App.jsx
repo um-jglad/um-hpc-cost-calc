@@ -168,6 +168,8 @@ function App() {
   const [isCopied, setIsCopied] = useState(false);
   const [sbatchHeaderInput, setSbatchHeaderInput] = useState('');
   const [sbatchImportFeedback, setSbatchImportFeedback] = useState(null);
+  const [importedScriptExtras, setImportedScriptExtras] = useState({ sbatchDirectives: [], scriptLines: [] });
+  const [importedRawResourceDirectives, setImportedRawResourceDirectives] = useState(null);
   const [importAppliedNonce, setImportAppliedNonce] = useState(0);
   const isApplyingSbatchImportRef = useRef(false);
   const sbatchRef = useRef(null);
@@ -223,6 +225,8 @@ function App() {
   const handleLoadSbatchExample = () => {
     setSbatchHeaderInput(EXAMPLE_SBATCH_HEADER);
     setSbatchImportFeedback(null);
+    setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
+    setImportedRawResourceDirectives(null);
   };
 
   const handleClusterChange = (e) => {
@@ -247,6 +251,8 @@ function App() {
     const activePartitionRates = CLUSTER_CONFIG[activeClusterKey].partitions;
 
     if (!parsed.sbatchLineCount) {
+      setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
+      setImportedRawResourceDirectives(null);
       setSbatchImportFeedback({
         status: 'error',
         errors: ['No SBATCH directives found. Paste header lines that begin with #SBATCH.'],
@@ -462,6 +468,8 @@ function App() {
     }
 
     if (errors.length > 0) {
+      setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
+      setImportedRawResourceDirectives(null);
       setSbatchImportFeedback({
         status: 'error',
         errors,
@@ -566,10 +574,10 @@ function App() {
     }
 
     if (parsed.nonSbatchLineCount > 0) {
-      warnings.push(`Ignored ${parsed.nonSbatchLineCount} non-SBATCH line(s).`);
+      warnings.push(`Retained ${parsed.nonSbatchLineCount} non-SBATCH line(s) in the generated script example.`);
     }
     if (parsed.ignoredDirectives.length > 0) {
-      warnings.push(`Ignored ${parsed.ignoredDirectives.length} unsupported SBATCH directive(s).`);
+      warnings.push(`Retained ${parsed.ignoredDirectives.length} unsupported SBATCH directive(s) in the generated script example (not used for estimation).`);
     }
 
     setSbatchImportFeedback({
@@ -580,6 +588,15 @@ function App() {
       ignoredDirectives: parsed.ignoredDirectives,
       nonSbatchLineCount: parsed.nonSbatchLineCount
     });
+    setImportedScriptExtras({
+      sbatchDirectives: parsed.passthroughSbatchDirectives || [],
+      scriptLines: parsed.passthroughScriptLines || []
+    });
+    setImportedRawResourceDirectives(
+      parsed.rawResourceDirectiveLines && parsed.rawResourceDirectiveLines.length > 0
+        ? parsed.rawResourceDirectiveLines
+        : null
+    );
     setImportAppliedNonce((n) => n + 1);
   };
 
@@ -802,29 +819,39 @@ function App() {
     };
 
     const memoryPerNode = jobType === 'multicore' ? clampedMemory : Math.ceil(clampedMemory / clampedCores) * clampedCores;
+    const importedSbatchDirectives = importedScriptExtras.sbatchDirectives || [];
+    const importedScriptLines = importedScriptExtras.scriptLines || [];
+    const hasImportedAccount = importedSbatchDirectives.some((line) => /^#SBATCH\s+--account\b/i.test(line));
+    const hasImportedMailType = importedSbatchDirectives.some((line) => /^#SBATCH\s+--mail-type\b/i.test(line));
+    const hasImportedMailUser = importedSbatchDirectives.some((line) => /^#SBATCH\s+--mail-user\b/i.test(line));
     
     let script = '#!/bin/bash\n';
     script += `#SBATCH --job-name=${jobType === 'standard' ? 'single-core' : jobType}-job\n`;
     script += `#SBATCH --partition=${partition}\n`;
     
-    if (jobType === 'array') {
+    if (importedRawResourceDirectives && importedRawResourceDirectives.length > 0) {
+      // Emit original imported resource directives verbatim — no translation.
+      script += `${importedRawResourceDirectives.join('\n')}\n`;
+    } else if (jobType === 'array') {
       // Array jobs should not have --nodes or --ntasks
       // --cpus-per-task should equal the number of CPUs requested
       script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
+      script += `#SBATCH --mem=${clampedMemory}G\n`;
     } else if (jobType === 'multicore') {
       script += `#SBATCH --nodes=1\n`;
       script += `#SBATCH --ntasks=1\n`;
       script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
+      script += `#SBATCH --mem=${memoryPerNode}G\n`;
     } else {
       script += `#SBATCH --nodes=1\n`;
       script += `#SBATCH --ntasks=${clampedCores}\n`;
       script += `#SBATCH --cpus-per-task=1\n`;
+      script += `#SBATCH --mem=${memoryPerNode}G\n`;
     }
     
-    script += `#SBATCH --mem=${memoryPerNode}G\n`;
     script += `#SBATCH --time=${formatTimeForSlurm()}\n`;
     
-    if (currentPartition.hasGPU && clampedGpus > 0) {
+    if (!importedRawResourceDirectives && currentPartition.hasGPU && clampedGpus > 0) {
       if (cluster === 'armis2' && partition === 'gpu' && gpuType) {
         script += `#SBATCH --gres=gpu:${gpuType}:${clampedGpus}\n`;
       } else {
@@ -835,26 +862,40 @@ function App() {
     if (jobType === 'array') {
       script += `#SBATCH --array=1-${safeArrayJobCount}\n`;
     }
-    
-    script += '#SBATCH --account=YOUR_ACCOUNT\n';
-    script += '#SBATCH --mail-type=BEGIN,END,FAIL\n';
-    script += '#SBATCH --mail-user=YOUR_EMAIL@umich.edu\n';
+
+    if (importedSbatchDirectives.length > 0) {
+      script += `${importedSbatchDirectives.join('\n')}\n`;
+    }
+    if (!hasImportedAccount) {
+      script += '#SBATCH --account=YOUR_ACCOUNT\n';
+    }
+    if (!hasImportedMailType) {
+      script += '#SBATCH --mail-type=BEGIN,END,FAIL\n';
+    }
+    if (!hasImportedMailUser) {
+      script += '#SBATCH --mail-user=YOUR_EMAIL@umich.edu\n';
+    }
     script += '\n';
-    script += '# Load necessary modules\n';
-    script += '# module load python/3.9.0\n';
-    script += '# module load gcc/9.2.0\n';
-    script += '\n';
-    
-    if (jobType === 'multicore') {
-      script += '# Run multicore job (shared memory)\n';
-      script += 'your_multicore_program\n';
-    } else if (jobType === 'array') {
-      script += '# Run array job\n';
-      script += 'echo "Array job ID: $SLURM_ARRAY_TASK_ID"\n';
-      script += 'your_program --input-file input_${SLURM_ARRAY_TASK_ID}.txt\n';
+
+    if (importedScriptLines.length > 0) {
+      script += `${importedScriptLines.join('\n')}\n`;
     } else {
-      script += '# Run single core job\n';
-      script += 'your_program\n';
+      script += '# Load necessary modules\n';
+      script += '# module load python/3.9.0\n';
+      script += '# module load gcc/9.2.0\n';
+      script += '\n';
+      
+      if (jobType === 'multicore') {
+        script += '# Run multicore job (shared memory)\n';
+        script += 'your_multicore_program\n';
+      } else if (jobType === 'array') {
+        script += '# Run array job\n';
+        script += 'echo "Array job ID: $SLURM_ARRAY_TASK_ID"\n';
+        script += 'your_program --input-file input_${SLURM_ARRAY_TASK_ID}.txt\n';
+      } else {
+        script += '# Run single core job\n';
+        script += 'your_program\n';
+      }
     }
     
     return script;

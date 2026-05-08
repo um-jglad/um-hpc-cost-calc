@@ -33,6 +33,7 @@ module load python
     expect(parsed.directives['cpus-per-gpu']).toBe('2');
   expect(parsed.directives.nodes).toBe('2-4');
   expect(parsed.directives['gpus-per-node']).toBe('a100:2');
+    expect(parsed.passthroughScriptLines).toEqual(['# comment', 'module load python']);
   });
 
   it('tracks unsupported SBATCH directives as ignored', () => {
@@ -41,6 +42,7 @@ module load python
     expect(parsed.directives.partition).toBe('debug');
     expect(parsed.ignoredDirectives.length).toBe(1);
     expect(parsed.ignoredDirectives[0]).toContain('--mail-type=END');
+    expect(parsed.passthroughSbatchDirectives).toEqual(['#SBATCH --mail-type=END']);
   });
 
   it('handles concatenated short options like -c4, -N2, -t01:00:00', () => {
@@ -62,6 +64,14 @@ module load python
   it('handles concatenated short option for node ranges like -N2-4', () => {
     const parsed = parseSbatchHeader('#SBATCH -N2-4');
     expect(parsed.directives.nodes).toBe('2-4');
+  });
+
+  it('parses multiple SBATCH directives provided on one line', () => {
+    const parsed = parseSbatchHeader('#SBATCH --cpus-per-task=1 #SBATCH --ntasks=4 #SBATCH --time=00:10:00');
+    expect(parsed.sbatchLineCount).toBe(3);
+    expect(parsed.directives['cpus-per-task']).toBe('1');
+    expect(parsed.directives.ntasks).toBe('4');
+    expect(parsed.directives.time).toBe('00:10:00');
   });
 });
 

@@ -33,7 +33,7 @@ Remember to update the README.md and this file as you make changes to the codeba
 - **Inline styling** for dynamic elements; use `index.css` for static layout
 - **Validation classes**: input receives `warning` or `error` CSS class based on out-of-range values
 - **Collapsible sections**: controlled by boolean `showSbatch` and CSS classes `expanded` / `collapsed`
-- **SBATCH import**: parser should only read `#SBATCH` lines and ignore unrelated script text
+- **SBATCH import**: parser uses supported `#SBATCH` directives for estimation, and preserves unsupported `#SBATCH` plus non-`#SBATCH` script lines for generated script examples
 - **SBATCH import directives**: include CPU/GPU forms such as `--cpus-per-gpu`, `--gpus-per-node`, `--gpus-per-task`, `--ntasks-per-node`, `--ntasks-per-gpu`, and surface warnings for ambiguous or mismatched requests
 - **Missing partition fallback**: if GPU directives are present but `--partition` is omitted, assume `--partition=gpu` and show an import warning about the assumption
 - **GPU/non-GPU mismatch handling**: if GPU directives are present but a non-GPU partition is selected, switch to `--partition=gpu` and warn about the remap
@@ -69,5 +69,5 @@ Remember to update the README.md and this file as you make changes to the codeba
 - Keep business logic in `App.jsx` self-contained; extract to helper modules only if repeated or for clarity
 - SBATCH parser helpers can live in `src/sbatchParser.js` so they are testable independently of UI
 - If adding new partitions, update `PARTITION_RATES` and ensure default values and limits are correct
-- When modifying SLURM script, maintain existing comment structure and placeholder values (`YOUR_ACCOUNT`, `YOUR_EMAIL`)
+- When modifying SLURM script, keep generated defaults (`YOUR_ACCOUNT`, `YOUR_EMAIL`) as fallback behavior when imported script values are not present
 - If a feature is implemented or changed, review the  README.md and update it as needed.

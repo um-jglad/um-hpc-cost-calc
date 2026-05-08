@@ -114,4 +114,100 @@ describe('App SBATCH import cluster reparse', () => {
     expect(coresInput.value).toBe('4');
     expect(container.textContent).toContain('Partition "spgpu" is unavailable on Armis2; using gpu.');
   });
+
+  it('retains imported unsupported directives and script commands in the generated example', async () => {
+    await clickButtonByText(container, 'Show Import Tool');
+
+    const sbatchInput = container.querySelector('#sbatchHeaderInput');
+    const importedScript = [
+      '#!/bin/bash',
+      '#SBATCH --partition=standard',
+      '#SBATCH --cpus-per-task=2',
+      '#SBATCH --mem=16G',
+      '#SBATCH --time=00:20:00',
+      '#SBATCH --account=my_project',
+      'module load python/3.11',
+      'python run.py'
+    ].join('\n');
+
+    await act(async () => {
+      setControlValue(sbatchInput, importedScript);
+    });
+
+    await clickButtonByText(container, 'Parse Header');
+    await clickButtonByText(container, 'Show SLURM Script');
+
+    expect(container.textContent).toContain('#SBATCH --account=my_project');
+    expect(container.textContent).toContain('module load python/3.11');
+    expect(container.textContent).toContain('python run.py');
+    expect(container.textContent).not.toContain('YOUR_ACCOUNT');
+    expect(container.textContent).toContain('Retained 3 non-SBATCH line(s) in the generated script example.');
+    expect(container.textContent).toContain('Retained 1 unsupported SBATCH directive(s) in the generated script example (not used for estimation).');
+  });
+
+  it('sets job type to multicore for imported multi-core requests on standard partition', async () => {
+    await clickButtonByText(container, 'Show Import Tool');
+
+    const jobTypeInput = container.querySelector('#jobType');
+    const sbatchInput = container.querySelector('#sbatchHeaderInput');
+    const importedScript = [
+      '#SBATCH --job-name=bs_simple',
+      '#SBATCH --output=logs/%x/%j.out',
+      '#SBATCH --partition=standard',
+      '#SBATCH --cpus-per-task=1',
+      '#SBATCH --ntasks=4',
+      '#SBATCH --time=00:05:00',
+      '#SBATCH --mem=1g',
+      '#SBATCH --mail-type=ALL'
+    ].join('\n');
+
+    await act(async () => {
+      setControlValue(sbatchInput, importedScript);
+    });
+
+    await clickButtonByText(container, 'Parse Header');
+    expect(jobTypeInput.value).toBe('multicore');
+    expect(container.textContent).not.toContain('⚠️ Standard jobs are limited to 1 core.');
+
+    await clickButtonByText(container, 'Show SLURM Script');
+    // Resource directives must be preserved verbatim from the import
+    expect(container.textContent).toContain('#SBATCH --ntasks=4');
+    expect(container.textContent).toContain('#SBATCH --cpus-per-task=1');
+    expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
+    expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=4');
+    expect(container.textContent).toContain('#SBATCH --mem=1g');
+    expect(container.textContent).not.toContain('#SBATCH --mem=1G');
+  });
+
+  it('preserves complex GPU resource directives verbatim in generated script', async () => {
+    await clickButtonByText(container, 'Show Import Tool');
+
+    const sbatchInput = container.querySelector('#sbatchHeaderInput');
+    const importedScript = [
+      '#SBATCH --partition=gpu',
+      '#SBATCH --ntasks-per-gpu=4',
+      '#SBATCH --cpus-per-task=2',
+      '#SBATCH --mem-per-cpu=4g',
+      '#SBATCH --gpus=2',
+      '#SBATCH --time=00:05:00'
+    ].join('\n');
+
+    await act(async () => {
+      setControlValue(sbatchInput, importedScript);
+    });
+
+    await clickButtonByText(container, 'Parse Header');
+    await clickButtonByText(container, 'Show SLURM Script');
+
+    // All original resource directives must appear verbatim
+    expect(container.textContent).toContain('#SBATCH --ntasks-per-gpu=4');
+    expect(container.textContent).toContain('#SBATCH --cpus-per-task=2');
+    expect(container.textContent).toContain('#SBATCH --mem-per-cpu=4g');
+    expect(container.textContent).toContain('#SBATCH --gpus=2');
+    // Must NOT emit translated normalized forms
+    expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
+    expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=16');
+    expect(container.textContent).not.toContain('#SBATCH --mem=64G');
+    expect(container.textContent).not.toContain('#SBATCH --gres=gpu:2');
+  });
 });
