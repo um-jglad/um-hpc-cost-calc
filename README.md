@@ -10,6 +10,7 @@ A modern web application for calculating job costs on the University of Michigan
 - Real-time cost updates as you adjust parameters
 - Import from existing SLURM headers by pasting `#SBATCH` directives
 - Import feedback for missing required directives, parse errors, and ignored lines
+- Preserves additional imported script content (unsupported `#SBATCH` directives and command/module lines) in the generated script example
 - Responsive design for desktop and mobile
 - Detailed breakdown of resources and dominant billing factor
 
@@ -93,7 +94,7 @@ Unit tests live in `src/sbatchParser.test.js` (parser functions) and `src/App.te
 
 ### SBATCH Header Import
 
-The parser reads only lines beginning with `#SBATCH` and ignores all other script text.
+The parser uses supported `#SBATCH` directives for estimation and carries additional imported content into the generated example script.
 
 Required directives for applying an import:
 
@@ -128,6 +129,7 @@ Notes:
 - `--array` throttles like `%10` are ignored for cost because they limit concurrency, not total tasks.
 - If GPU directives are present and a non-GPU partition is selected, the importer switches to the cluster GPU partition and shows a warning about the change.
 - Unsupported `#SBATCH` directives are ignored and reported in warnings.
+- Unsupported `#SBATCH` directives and non-`#SBATCH` script lines are retained in the generated example script (but unsupported directives are not used for estimation).
 
 ## Cost Calculation
 
