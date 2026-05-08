@@ -828,7 +828,7 @@ function App() {
     const shouldPreserveImportedTaskLayout = (
       jobType === 'multicore'
       && importedCpuLayout
-      && importedCpuLayout.ntasks > 1
+      && importedCpuLayout.ntasks > 0
       && importedCpuLayout.totalCores === clampedCores
     );
     const hasImportedAccount = importedSbatchDirectives.some((line) => /^#SBATCH\s+--account\b/i.test(line));
