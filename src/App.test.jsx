@@ -168,5 +168,11 @@ describe('App SBATCH import cluster reparse', () => {
     await clickButtonByText(container, 'Parse Header');
     expect(jobTypeInput.value).toBe('multicore');
     expect(container.textContent).not.toContain('⚠️ Standard jobs are limited to 1 core.');
+
+    await clickButtonByText(container, 'Show SLURM Script');
+    expect(container.textContent).toContain('#SBATCH --ntasks=4');
+    expect(container.textContent).toContain('#SBATCH --cpus-per-task=1');
+    expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
+    expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=4');
   });
 });

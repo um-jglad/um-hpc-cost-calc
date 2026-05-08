@@ -169,6 +169,7 @@ function App() {
   const [sbatchHeaderInput, setSbatchHeaderInput] = useState('');
   const [sbatchImportFeedback, setSbatchImportFeedback] = useState(null);
   const [importedScriptExtras, setImportedScriptExtras] = useState({ sbatchDirectives: [], scriptLines: [] });
+  const [importedCpuLayout, setImportedCpuLayout] = useState(null);
   const [importAppliedNonce, setImportAppliedNonce] = useState(0);
   const isApplyingSbatchImportRef = useRef(false);
   const sbatchRef = useRef(null);
@@ -225,6 +226,7 @@ function App() {
     setSbatchHeaderInput(EXAMPLE_SBATCH_HEADER);
     setSbatchImportFeedback(null);
     setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
+    setImportedCpuLayout(null);
   };
 
   const handleClusterChange = (e) => {
@@ -250,6 +252,7 @@ function App() {
 
     if (!parsed.sbatchLineCount) {
       setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
+      setImportedCpuLayout(null);
       setSbatchImportFeedback({
         status: 'error',
         errors: ['No SBATCH directives found. Paste header lines that begin with #SBATCH.'],
@@ -466,6 +469,7 @@ function App() {
 
     if (errors.length > 0) {
       setImportedScriptExtras({ sbatchDirectives: [], scriptLines: [] });
+      setImportedCpuLayout(null);
       setSbatchImportFeedback({
         status: 'error',
         errors,
@@ -588,6 +592,15 @@ function App() {
       sbatchDirectives: parsed.passthroughSbatchDirectives || [],
       scriptLines: parsed.passthroughScriptLines || []
     });
+    setImportedCpuLayout(
+      ntasks !== null && cpusPerTask !== null
+        ? {
+            ntasks,
+            cpusPerTask,
+            totalCores: ntasks * cpusPerTask
+          }
+        : null
+    );
     setImportAppliedNonce((n) => n + 1);
   };
 
@@ -812,6 +825,12 @@ function App() {
     const memoryPerNode = jobType === 'multicore' ? clampedMemory : Math.ceil(clampedMemory / clampedCores) * clampedCores;
     const importedSbatchDirectives = importedScriptExtras.sbatchDirectives || [];
     const importedScriptLines = importedScriptExtras.scriptLines || [];
+    const shouldPreserveImportedTaskLayout = (
+      jobType === 'multicore'
+      && importedCpuLayout
+      && importedCpuLayout.ntasks > 1
+      && importedCpuLayout.totalCores === clampedCores
+    );
     const hasImportedAccount = importedSbatchDirectives.some((line) => /^#SBATCH\s+--account\b/i.test(line));
     const hasImportedMailType = importedSbatchDirectives.some((line) => /^#SBATCH\s+--mail-type\b/i.test(line));
     const hasImportedMailUser = importedSbatchDirectives.some((line) => /^#SBATCH\s+--mail-user\b/i.test(line));
@@ -826,8 +845,13 @@ function App() {
       script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
     } else if (jobType === 'multicore') {
       script += `#SBATCH --nodes=1\n`;
-      script += `#SBATCH --ntasks=1\n`;
-      script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
+      if (shouldPreserveImportedTaskLayout) {
+        script += `#SBATCH --ntasks=${importedCpuLayout.ntasks}\n`;
+        script += `#SBATCH --cpus-per-task=${importedCpuLayout.cpusPerTask}\n`;
+      } else {
+        script += `#SBATCH --ntasks=1\n`;
+        script += `#SBATCH --cpus-per-task=${clampedCores}\n`;
+      }
     } else {
       script += `#SBATCH --nodes=1\n`;
       script += `#SBATCH --ntasks=${clampedCores}\n`;
