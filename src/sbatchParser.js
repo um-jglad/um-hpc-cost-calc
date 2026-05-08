@@ -133,42 +133,49 @@ export const parseSbatchHeader = (input) => {
       return;
     }
 
-    sbatchLineCount += 1;
-    const directiveBody = trimmed.replace(/^#SBATCH\s*/i, '').trim();
-    if (!directiveBody) {
-      ignoredDirectives.push('(empty SBATCH directive)');
-      return;
-    }
+    const directiveLines = trimmed
+      .split(/\s+(?=#SBATCH\b)/i)
+      .map((directiveLine) => directiveLine.trim())
+      .filter(Boolean);
 
-    const withoutComment = directiveBody.split(/\s+#/)[0].trim();
-
-    // Detect short options with concatenated values (e.g. -c4, -N2, -t01:00:00).
-    // These have exactly one dash, one letter, and a value starting with an alphanumeric character.
-    const concatShortMatch = withoutComment.match(/^(-[a-zA-Z])([0-9a-zA-Z].*)$/);
-    let keyRaw, valueRaw;
-    if (concatShortMatch) {
-      keyRaw = concatShortMatch[1];
-      valueRaw = concatShortMatch[2];
-    } else {
-      const keyValueMatch = withoutComment.match(/^(-{1,2}[^\s=]+)(?:\s*=\s*|\s+)?(.*)$/);
-      if (!keyValueMatch) {
-        ignoredDirectives.push(withoutComment);
+    directiveLines.forEach((directiveLine) => {
+      sbatchLineCount += 1;
+      const directiveBody = directiveLine.replace(/^#SBATCH\s*/i, '').trim();
+      if (!directiveBody) {
+        ignoredDirectives.push('(empty SBATCH directive)');
         return;
       }
-      keyRaw = keyValueMatch[1];
-      valueRaw = (keyValueMatch[2] || '').trim();
-    }
 
-    const normalizedKey = normalizeDirectiveKey(keyRaw);
-    const value = valueRaw.trim();
+      const withoutComment = directiveBody.split(/\s+#/)[0].trim();
 
-    if (!SUPPORTED_SBATCH_KEYS.has(normalizedKey)) {
-      ignoredDirectives.push(withoutComment);
-      passthroughSbatchDirectives.push(trimmed);
-      return;
-    }
+      // Detect short options with concatenated values (e.g. -c4, -N2, -t01:00:00).
+      // These have exactly one dash, one letter, and a value starting with an alphanumeric character.
+      const concatShortMatch = withoutComment.match(/^(-[a-zA-Z])([0-9a-zA-Z].*)$/);
+      let keyRaw, valueRaw;
+      if (concatShortMatch) {
+        keyRaw = concatShortMatch[1];
+        valueRaw = concatShortMatch[2];
+      } else {
+        const keyValueMatch = withoutComment.match(/^(-{1,2}[^\s=]+)(?:\s*=\s*|\s+)?(.*)$/);
+        if (!keyValueMatch) {
+          ignoredDirectives.push(withoutComment);
+          return;
+        }
+        keyRaw = keyValueMatch[1];
+        valueRaw = (keyValueMatch[2] || '').trim();
+      }
 
-    directives[normalizedKey] = value;
+      const normalizedKey = normalizeDirectiveKey(keyRaw);
+      const value = valueRaw.trim();
+
+      if (!SUPPORTED_SBATCH_KEYS.has(normalizedKey)) {
+        ignoredDirectives.push(withoutComment);
+        passthroughSbatchDirectives.push(directiveLine);
+        return;
+      }
+
+      directives[normalizedKey] = value;
+    });
   });
 
   return {

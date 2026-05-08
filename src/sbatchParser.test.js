@@ -65,6 +65,14 @@ module load python
     const parsed = parseSbatchHeader('#SBATCH -N2-4');
     expect(parsed.directives.nodes).toBe('2-4');
   });
+
+  it('parses multiple SBATCH directives provided on one line', () => {
+    const parsed = parseSbatchHeader('#SBATCH --cpus-per-task=1 #SBATCH --ntasks=4 #SBATCH --time=00:10:00');
+    expect(parsed.sbatchLineCount).toBe(3);
+    expect(parsed.directives['cpus-per-task']).toBe('1');
+    expect(parsed.directives.ntasks).toBe('4');
+    expect(parsed.directives.time).toBe('00:10:00');
+  });
 });
 
 describe('parseTimeDirectiveToSeconds', () => {

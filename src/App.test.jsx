@@ -144,4 +144,29 @@ describe('App SBATCH import cluster reparse', () => {
     expect(container.textContent).toContain('Retained 3 non-SBATCH line(s) in the generated script example.');
     expect(container.textContent).toContain('Retained 1 unsupported SBATCH directive(s) in the generated script example (not used for estimation).');
   });
+
+  it('preserves imported ntasks with cpus-per-task=1 in generated script', async () => {
+    await clickButtonByText(container, 'Show Import Tool');
+
+    const sbatchInput = container.querySelector('#sbatchHeaderInput');
+    const importedScript = [
+      '#SBATCH --partition=standard',
+      '#SBATCH --cpus-per-task=1',
+      '#SBATCH --ntasks=4',
+      '#SBATCH --mem=16G',
+      '#SBATCH --time=00:20:00'
+    ].join('\n');
+
+    await act(async () => {
+      setControlValue(sbatchInput, importedScript);
+    });
+
+    await clickButtonByText(container, 'Parse Header');
+    await clickButtonByText(container, 'Show SLURM Script');
+
+    expect(container.textContent).toContain('#SBATCH --ntasks=4');
+    expect(container.textContent).toContain('#SBATCH --cpus-per-task=1');
+    expect(container.textContent).not.toContain('#SBATCH --ntasks=1');
+    expect(container.textContent).not.toContain('#SBATCH --cpus-per-task=4');
+  });
 });
