@@ -114,15 +114,22 @@ export const parseSbatchHeader = (input) => {
   const lines = input.split('\n');
   const directives = {};
   const ignoredDirectives = [];
+  const passthroughSbatchDirectives = [];
+  const passthroughScriptLines = [];
   let sbatchLineCount = 0;
   let nonSbatchLineCount = 0;
 
   lines.forEach((line) => {
     const trimmed = line.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      return;
+    }
 
     if (!/^#SBATCH\b/i.test(trimmed)) {
       nonSbatchLineCount += 1;
+      if (!/^#!\s*\/.+/.test(trimmed)) {
+        passthroughScriptLines.push(line.replace(/\r$/, ''));
+      }
       return;
     }
 
@@ -157,6 +164,7 @@ export const parseSbatchHeader = (input) => {
 
     if (!SUPPORTED_SBATCH_KEYS.has(normalizedKey)) {
       ignoredDirectives.push(withoutComment);
+      passthroughSbatchDirectives.push(trimmed);
       return;
     }
 
@@ -166,6 +174,8 @@ export const parseSbatchHeader = (input) => {
   return {
     directives,
     ignoredDirectives,
+    passthroughSbatchDirectives,
+    passthroughScriptLines,
     sbatchLineCount,
     nonSbatchLineCount
   };

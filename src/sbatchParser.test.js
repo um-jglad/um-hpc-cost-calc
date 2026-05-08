@@ -33,6 +33,7 @@ module load python
     expect(parsed.directives['cpus-per-gpu']).toBe('2');
   expect(parsed.directives.nodes).toBe('2-4');
   expect(parsed.directives['gpus-per-node']).toBe('a100:2');
+    expect(parsed.passthroughScriptLines).toEqual(['# comment', 'module load python']);
   });
 
   it('tracks unsupported SBATCH directives as ignored', () => {
@@ -41,6 +42,7 @@ module load python
     expect(parsed.directives.partition).toBe('debug');
     expect(parsed.ignoredDirectives.length).toBe(1);
     expect(parsed.ignoredDirectives[0]).toContain('--mail-type=END');
+    expect(parsed.passthroughSbatchDirectives).toEqual(['#SBATCH --mail-type=END']);
   });
 
   it('handles concatenated short options like -c4, -N2, -t01:00:00', () => {

@@ -114,4 +114,34 @@ describe('App SBATCH import cluster reparse', () => {
     expect(coresInput.value).toBe('4');
     expect(container.textContent).toContain('Partition "spgpu" is unavailable on Armis2; using gpu.');
   });
+
+  it('retains imported unsupported directives and script commands in the generated example', async () => {
+    await clickButtonByText(container, 'Show Import Tool');
+
+    const sbatchInput = container.querySelector('#sbatchHeaderInput');
+    const importedScript = [
+      '#!/bin/bash',
+      '#SBATCH --partition=standard',
+      '#SBATCH --cpus-per-task=2',
+      '#SBATCH --mem=16G',
+      '#SBATCH --time=00:20:00',
+      '#SBATCH --account=my_project',
+      'module load python/3.11',
+      'python run.py'
+    ].join('\n');
+
+    await act(async () => {
+      setControlValue(sbatchInput, importedScript);
+    });
+
+    await clickButtonByText(container, 'Parse Header');
+    await clickButtonByText(container, 'Show SLURM Script');
+
+    expect(container.textContent).toContain('#SBATCH --account=my_project');
+    expect(container.textContent).toContain('module load python/3.11');
+    expect(container.textContent).toContain('python run.py');
+    expect(container.textContent).not.toContain('YOUR_ACCOUNT');
+    expect(container.textContent).toContain('Retained 3 non-SBATCH line(s) in the generated script example.');
+    expect(container.textContent).toContain('Retained 1 unsupported SBATCH directive(s) in the generated script example (not used for estimation).');
+  });
 });
